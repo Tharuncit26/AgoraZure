@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgoraZure - Smart Commerce Platform (Zéphyr 2026 AI Hackathon PS-2)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body style="background: radial-gradient(circle at top right, #e0f2fe, #f1f5f9 60%);">
+
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo-area">
+        <div class="logo-icon">🌐</div>
+        <span>AgoraZure <span style="font-size: 0.72rem; font-weight: 600; color: #0284c7; padding: 0.2rem 0.6rem; background: #e0f2fe; border-radius: 9999px;">PS-2 SMART COMMERCE</span></span>
+      </div>
+      <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">
+        Zéphyr 2026 AI Hackathon
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content" style="max-width: 960px; padding-top: 2rem;">
+
+    <!-- Hero Section -->
+    <div style="text-align: center; margin-bottom: 2.5rem;">
+      <span class="badge badge-primary" style="font-size: 0.85rem; padding: 0.35rem 0.85rem; margin-bottom: 1rem;">
+        🚀 Zéphyr 2026 Prototype
+      </span>
+      <h1 style="font-size: 2.6rem; line-height: 1.15; margin-bottom: 0.75rem; color: #0f172a;">
+        Connecting Local Neighborhood Shops & Shoppers
+      </h1>
+      <p style="font-size: 1.15rem; color: #475569; max-width: 680px; margin: 0 auto;">
+        AgoraZure unifies hyperlocal retail through one shared system: live stock discovery, FEFO barcode billing, 1 km shared delivery clusters, and an AI-driven unmet-demand loop.
+      </p>
+    </div>
+
+    <!-- Dual Website Launch Cards -->
+    <div class="grid grid-cols-2" style="margin-bottom: 2.5rem; gap: 1.5rem;">
+      
+      <!-- Shopper Website Card -->
+      <div class="card" style="border: 2px solid #bbf7d0; display: flex; flex-direction: column; justify-content: space-between; padding: 1.75rem; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="width: 52px; height: 52px; background: #dcfce7; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.8rem;">
+              🛍️
+            </div>
+            <span class="badge badge-success">For Consumers</span>
+          </div>
+
+          <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #065f46;">Shopper Website</h2>
+          <p style="font-size: 0.92rem; color: #475569; margin-bottom: 1.25rem;">
+            Search nearby shops with live stock, distance in km, "Use Soon" near-expiry discounts, pre-book or buy from home with queue-free pickup or shared delivery.
+          </p>
+
+          <ul style="font-size: 0.85rem; color: #334155; margin-bottom: 1.5rem; padding-left: 1.2rem; line-height: 1.7;">
+            <li>📍 <strong>Nearby Live Stock</strong>: Haversine distance & inventory</li>
+            <li>🤖 <strong>Smart AI Substitutes</strong>: Azure OpenAI recommendations</li>
+            <li>⚡ <strong>"Use Soon" Deals</strong>: 30% off near-expiry stock</li>
+            <li>🔔 <strong>Unmet-Demand Notify-Back</strong>: Alerts when items arrive</li>
+            <li>⭐ <strong>Loyalty Rewards</strong>: 1 point per ₹50 spent</li>
+          </ul>
+        </div>
+
+        <a href="/shopper" class="btn btn-accent btn-block" style="padding: 0.85rem; font-size: 1.05rem;">
+          Open Shopper Website &rarr;
+        </a>
+      </div>
+
+      <!-- Shopkeeper Website Card -->
+      <div class="card" style="border: 2px solid #bae6fd; display: flex; flex-direction: column; justify-content: space-between; padding: 1.75rem; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="width: 52px; height: 52px; background: #e0f2fe; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.8rem;">
+              🏪
+            </div>
+            <span class="badge badge-primary">For Retailers</span>
+          </div>
+
+          <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #0369a1;">Shopkeeper Website</h2>
+          <p style="font-size: 0.92rem; color: #475569; margin-bottom: 1.25rem;">
+            Barcode POS with always-focused scanner, dual-bill tabs, UPI QR, FEFO batch stock reduction, shrinkage audit, and shared delivery cluster cost splitting.
+          </p>
+
+          <ul style="font-size: 0.85rem; color: #334155; margin-bottom: 1.5rem; padding-left: 1.2rem; line-height: 1.7;">
+            <li>🔍 <strong>Scan & Bill POS</strong>: Dual open tabs + Cash/UPI QR</li>
+            <li>📦 <strong>FEFO Batches</strong>: First-Expired First-Out automatic sales</li>
+            <li>⚠️ <strong>Triple Alerts</strong>: Low stock, shrinkage audit, expiry alerts</li>
+            <li>🛵 <strong>Shared Delivery</strong>: 1 km radius cluster splits rider salary</li>
+            <li>🧠 <strong>Azure AI Demand Insights</strong>: Stocking advice on missed searches</li>
+          </ul>
+        </div>
+
+        <a href="/shopkeeper" class="btn btn-primary btn-block" style="padding: 0.85rem; font-size: 1.05rem;">
+          Open Shopkeeper Website &rarr;
+        </a>
+      </div>
+
+    </div>
+
+    <!-- Core Differentiators Section -->
+    <div class="card" style="background: #ffffff; padding: 2rem;">
+      <h3 style="font-size: 1.25rem; margin-bottom: 1rem; text-align: center;">Key Architectural Differentiators</h3>
+      
+      <div class="grid grid-cols-3" style="gap: 1.25rem; margin-top: 1.25rem;">
+        <div style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--primary);">
+          <strong>🔄 Unmet-Demand Loop</strong>
+          <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.35rem;">
+            Missed searches are logged into SQLite -> Azure OpenAI generates stocking advice for shopkeepers -> automatically notifies shoppers the moment goods arrive.
+          </p>
+        </div>
+
+        <div style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent);">
+          <strong>🛵 Shared Delivery Service</strong>
+          <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.35rem;">
+            Haversine formula automatically groups shops within a 1 km radius into a cluster. All shops share ONE rider (₹12,000 / N shops = low cost per shopkeeper).
+          </p>
+        </div>
+
+        <div style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--warning);">
+          <strong>🏷️ FEFO Batch Inventory</strong>
+          <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.35rem;">
+            Stock is tracked in batches with hand-entered expiries. At checkout, nearest-expiry batches sell first. Near-expiry batches power "Use Soon" discount deals.
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+</body>
+</html>
