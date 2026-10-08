@@ -1,15 +1,8 @@
 {
-  "version": 2,
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" },
-    { "source": "/docs", "destination": "/api/index.py" },
-    { "source": "/openapi.json", "destination": "/api/index.py" },
-    { "source": "/shopper", "destination": "/frontend/shopper.html" },
-    { "source": "/shopkeeper", "destination": "/frontend/shopkeeper.html" },
-    { "source": "/static/(.*)", "destination": "/frontend/$1" },
-    { "source": "/css/(.*)", "destination": "/frontend/css/$1" },
-    { "source": "/js/(.*)", "destination": "/frontend/js/$1" },
-    { "source": "/", "destination": "/frontend/index.html" },
-    { "source": "/(.*)", "destination": "/api/index.py" }
+    { "source": "/shopper", "destination": "/shopper.html" },
+    { "source": "/shopkeeper", "destination": "/shopkeeper.html" }
   ]
 }

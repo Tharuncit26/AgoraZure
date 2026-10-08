@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgoraZure - Shopkeeper POS & Smart Commerce Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo-area">
+        <div class="logo-icon">🏪</div>
+        <span>AgoraZure <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); padding: 0.2rem 0.5rem; background: #f1f5f9; border-radius: 6px;">SHOPKEEPER</span></span>
+      </div>
+
+      <div class="header-actions" id="shopAuthBar" style="display: none;">
+        <div style="text-align: right; margin-right: 0.5rem;">
+          <div id="shopNameDisplay" style="font-weight: 700; font-size: 0.95rem; line-height: 1.2;">Gupta Supermart</div>
+          <div id="shopOwnerDisplay" style="font-size: 0.78rem; color: var(--text-muted);">Rajesh Gupta</div>
+          <div id="shopAddressDisplay" style="font-size: 0.72rem; color: var(--text-muted);">Indiranagar, Bengaluru</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs (Mobile-First Scrolling Tabs) -->
+  <nav class="nav-tabs">
+    <div class="tabs-container">
+      <button class="tab-btn active" data-tab="billing" id="tabBtnBilling">
+        <span>💳</span> Scan & Bill
+      </button>
+      <button class="tab-btn" data-tab="stock" id="tabBtnStock">
+        <span>📦</span> Stock & Batches
+      </button>
+      <button class="tab-btn" data-tab="alerts" id="tabBtnAlerts">
+        <span>⚠️</span> Alerts
+      </button>
+      <button class="tab-btn" data-tab="insights" id="tabBtnInsights">
+        <span>🧠</span> Demand AI
+      </button>
+      <button class="tab-btn" data-tab="orders" id="tabBtnOrders">
+        <span>🛍️</span> Orders (<span id="ordersCountBadge">0</span>)
+      </button>
+      <button class="tab-btn" data-tab="delivery" id="tabBtnDelivery">
+        <span>🛵</span> Shared Delivery
+      </button>
+      <button class="tab-btn" data-tab="marketing" id="tabBtnMarketing">
+        <span>🎁</span> Loyalty & Offers
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Content Layout -->
+  <main class="main-content">
+
+    <!-- ================================================================= -->
+    <!-- TAB 1: SCAN & BILL (POS ENGINE) -->
+    <!-- ================================================================= -->
+    <section class="tab-panel active" id="tab-billing">
+      
+      <!-- Dual Billing Tabs Switcher -->
+      <div class="billing-tab-switcher">
+        <button class="billing-session-btn active" id="btnBillTab1" onclick="switchBillingSession('tab_1')">
+          <span>Bill Tab 1 (Customer A)</span>
+          <span class="badge badge-primary" id="countBadge_tab_1">0</span>
+        </button>
+        <button class="billing-session-btn" id="btnBillTab2" onclick="switchBillingSession('tab_2')">
+          <span>Bill Tab 2 (Customer B)</span>
+          <span class="badge badge-neutral" id="countBadge_tab_2">0</span>
+        </button>
+      </div>
+
+      <!-- Always-Focused Barcode Scanner Input -->
+      <div class="card" style="border: 2px solid var(--primary-light); background: #ffffff;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span style="font-size: 0.82rem; font-weight: 700; color: var(--primary-dark); display: flex; align-items: center;">
+            <span class="scanner-pulse"></span> SCANNER ACTIVE (KEYBOARD INPUT EMULATION)
+          </span>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Plug & play barcode scanner or press Enter</span>
+        </div>
+
+        <div class="scanner-input-container">
+          <span class="scanner-icon">🔍</span>
+          <input 
+            type="text" 
+            id="barcodeScannerInput" 
+            class="scanner-input" 
+            placeholder="Scan barcode here (e.g. 890103000001) & press Enter..." 
+            autofocus 
+            autocomplete="off"
+          >
+        </div>
+      </div>
+
+      <!-- Active Bill Items Table -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🛒</span> Current Bill Items
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="clearCurrentBill()">Clear Bill</button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Price</th>
+                <th>Quantity</th>
+                <th>Subtotal</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="billingItemsTbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bill Totals & Payment Actions -->
+        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 2px solid var(--surface-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); display: flex; gap: 0.4rem; align-items: baseline;">
+              <span>Subtotal:</span>
+              <span id="billSubtotal" style="font-weight: 600; color: var(--text);">₹0.00</span>
+            </div>
+            <div id="billGrandTotal" style="font-size: 2rem; font-weight: 800; color: var(--primary);">₹0.00</div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-pay-action" onclick="handlePayCash()" disabled>
+              💵 Pay Cash
+            </button>
+            <button class="btn btn-primary btn-pay-action" onclick="handleShowUpiQr()" disabled>
+              📱 Show UPI QR
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- TAB 2: STOCK & BATCHES -->
+    <!-- ================================================================= -->
+    <section class="tab-panel" id="tab-stock">
+      <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h2>Inventory & Batch Tracking (FEFO)</h2>
+            <p style="font-size: 0.82rem; color: var(--text-muted);">Track quantities in batches with hand-entered expiry dates. Oldest batch sells first.</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" onclick="openAddBatchModal()">+ Add Goods (Batch)</button>
+            <button class="btn btn-primary btn-sm" onclick="showModal('addProductModal')">+ New Product</button>
+          </div>
+        </div>
+
+        <div class="form-group" style="max-width: 400px; margin-bottom: 1rem;">
+          <input type="text" id="stockSearchInput" class="form-control" placeholder="Search by name, barcode, or category...">
+        </div>
+
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Product & Category</th>
+                <th>Barcode</th>
+                <th>Price</th>
+                <th>Total Stock</th>
+                <th>Threshold</th>
+                <th>Nearest Expiry</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="stockTableBody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- TAB 3: ALERTS (Low Stock, Shrinkage, Expiry) -->
+    <!-- ================================================================= -->
+    <section class="tab-panel" id="tab-alerts">
+      <div class="grid grid-cols-2">
+        
+        <!-- Low Stock Alerts -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>📉</span> Low Stock Alerts (<span id="lowStockCountBadge">0</span>)
+            </div>
+          </div>
+          <div id="lowStockAlertsList">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+        <!-- Expiry Alerts (FEFO) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>⏳</span> Near Expiry Alerts (<span id="expiryCountBadge">0</span>)
+            </div>
+          </div>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Items expiring in 30 days. FEFO algorithm prioritizes oldest batch at POS checkout.
+          </p>
+          <div id="expiryAlertsList">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Physical Shrinkage Check Section -->
+      <div class="card" style="margin-top: 1rem;">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔍</span> Physical Shrinkage Audit
+          </div>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Perform stock spot-checks. Enter counted units; AgoraZure compares recorded system stock against your physical count and flags discrepancies (leakage, damage, theft).
+        </p>
+
+        <form id="shrinkageCheckForm" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+          <div class="form-group" style="flex: 2; min-width: 200px; margin-bottom: 0;">
+            <label class="form-label">Select Product</label>
+            <select id="shrinkageProductSelect" name="product_id" class="form-control" required></select>
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 140px; margin-bottom: 0;">
+            <label class="form-label">Physically Counted Qty</label>
+            <input type="number" name="counted_quantity" class="form-control" min="0" placeholder="e.g. 15" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="height: 42px;">Verify Match</button>
+        </form>
+
+        <div id="shrinkageResultBox" style="display: none; margin-top: 1.25rem;"></div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- TAB 4: UNMET DEMAND & AI INSIGHTS -->
+    <!-- ================================================================= -->
+    <section class="tab-panel" id="tab-insights">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2>Unmet-Demand Loop & AI Stocking Advice</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              When nearby shoppers search for unstocked goods, demand is logged and transformed into AI stocking advice.
+            </p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadDemandInsights()">↻ Refresh AI</button>
+        </div>
+
+        <div class="grid grid-cols-2" style="margin-bottom: 1.25rem;">
+          <div style="background: var(--surface-subtle); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
+            <div id="missedSearchCountTotal" style="font-size: 1.8rem; font-weight: 800; color: var(--primary);">0</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">TOTAL MISSED SEARCHES LOGGED</div>
+          </div>
+          <div style="background: var(--surface-subtle); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
+            <div id="unmetDemandItemsCount" style="font-size: 1.8rem; font-weight: 800; color: var(--accent);">0</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">DISTINCT UNMET PRODUCTS</div>
+          </div>
+        </div>
+
+        <div id="demandInsightsList">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- TAB 5: ONLINE ORDERS -->
+    <!-- ================================================================= -->
+    <section class="tab-panel" id="tab-orders">
+      <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <h2>Online Orders & Pre-Books</h2>
+            <p style="font-size: 0.82rem; color: var(--text-muted);">Accept orders, prepare items, and coordinate pickup or cluster shared delivery.</p>
+          </div>
+          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="loadOrders('')">All</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadOrders('pending')">Pending</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadOrders('accepted')">Accepted</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadOrders('ready')">Ready</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadOrders('completed')">Completed</button>
+          </div>
+        </div>
+
+        <div id="ordersListContainer">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- TAB 6: SHARED DELIVERY SERVICE -->
+    <!-- ================================================================= -->
+    <section class="tab-panel" id="tab-delivery">
+      <div id="clusterContentArea">
+        <div class="cluster-banner">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <span class="badge badge-primary" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">1 KM RADIUS CLUSTER</span>
+              <h2 id="clusterNameDisplay" style="color: white; margin-top: 0.3rem;">Indiranagar Central Cluster</h2>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="recomputeClusters()">↻ Recalculate 1 km Radius</button>
+          </div>
+
+          <div class="cluster-metrics">
+            <div class="metric-item">
+              <div class="metric-value" id="sharedRiderName">Ramesh Kumar</div>
+              <div class="metric-label">Shared Delivery Rider</div>
+              <div id="sharedRiderPhone" style="font-size: 0.75rem; color: rgba(255, 255, 255, 0.75); margin-top: 0.2rem;">9876543210</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-value" id="totalRiderSalary">₹12,000</div>
+              <div class="metric-label">Total Rider Salary</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-value" id="shopsSharingCount">3</div>
+              <div class="metric-label">Shops in Cluster</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-value" id="thisShopSalaryShare" style="color: #4ade80;">₹4,000</div>
+              <div class="metric-label">THIS SHOP'S SHARE / MO</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🏪</span> Shops Sharing This Delivery Person
+          </div>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          All shops located within 1 km share one delivery person. Salary is split equally and recalculates automatically when a new shop joins.
+        </p>
+
+        <div id="clusterShopsList">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- TAB 7: LOYALTY & SEASONAL OFFERS -->
+    <!-- ================================================================= -->
+    <section class="tab-panel" id="tab-marketing">
+      <div class="grid grid-cols-2">
+        
+        <!-- Seasonal Offers -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🏷️</span> Seasonal Offers
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="showModal('createOfferModal')">+ New Offer</button>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Run festive discounts or clearance promotions across products.
+          </p>
+          <div id="offersListContainer">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+        <!-- Customer Loyalty Ledger -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>⭐</span> Customer Loyalty Points
+            </div>
+          </div>
+          <div style="display: flex; gap: 1rem; margin-bottom: 0.75rem;">
+            <div>Total Rewards: <strong id="loyaltyTotalIssued" style="color: var(--primary);">0</strong> pts</div>
+            <div>Enrolled Customers: <strong id="loyaltyCustomerCount">0</strong></div>
+          </div>
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Phone</th>
+                  <th>Points</th>
+                  <th>Last Active</th>
+                </tr>
+              </thead>
+              <tbody id="loyaltyCustomersTbody">
+                <!-- Rendered via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: AUTHENTICATION / QUICK DEMO LOGIN -->
+  <!-- ================================================================= -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🏪 Shopkeeper Access</h3>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <label class="form-label">🚀 1-Click Demo Login (Judge / Tester)</label>
+        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810011111', 'password123')">
+            Login as <strong>Gupta Supermart</strong> (Indiranagar - Cluster 1)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810022222', 'password123')">
+            Login as <strong>Fresh Daily Grocery</strong> (Indiranagar - Cluster 1)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810033333', 'password123')">
+            Login as <strong>Metro Provision Store</strong> (Indiranagar - Cluster 1)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810044444', 'password123')">
+            Login as <strong>Green Field Organics</strong> (Whitefield - Far away)
+          </button>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin: 1rem 0; color: var(--text-muted); font-size: 0.85rem;">
+        ── OR REGISTER NEW SHOP ──
+      </div>
+
+      <form id="registerShopForm">
+        <div class="form-group">
+          <label class="form-label">Shop Name</label>
+          <input type="text" name="shop_name" class="form-control" placeholder="e.g. Anand Provision Store" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Owner Name</label>
+          <input type="text" name="owner_name" class="form-control" placeholder="e.g. Anand Sharma" required>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" name="phone" class="form-control" placeholder="10-digit mobile" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input type="password" name="password" class="form-control" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Address</label>
+          <input type="text" name="address" class="form-control" placeholder="Street, Area, City" required>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Latitude</label>
+            <input type="number" step="any" name="latitude" class="form-control" value="12.9725" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Longitude</label>
+            <input type="number" step="any" name="longitude" class="form-control" value="77.6425" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Register Shop Account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: ADD PRODUCT -->
+  <!-- ================================================================= -->
+  <div class="modal-overlay" id="addProductModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>📦 Register New Product</h3>
+        <button class="modal-close" onclick="hideModal('addProductModal')">&times;</button>
+      </div>
+
+      <form id="addProductForm">
+        <div class="form-group">
+          <label class="form-label">Product Name</label>
+          <input type="text" name="name" class="form-control" placeholder="e.g. Amul Taaza Milk 500ml" required>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Barcode (Scan or Type)</label>
+            <input type="text" name="barcode" class="form-control" placeholder="e.g. 890103000001" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Selling Price (₹)</label>
+            <input type="number" step="0.5" name="price" class="form-control" placeholder="28.0" required>
+          </div>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <input type="text" name="category" class="form-control" placeholder="e.g. Dairy & Breakfast" value="General">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Low Stock Threshold</label>
+            <input type="number" name="low_stock_threshold" class="form-control" value="5">
+          </div>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Initial Quantity</label>
+            <input type="number" name="initial_quantity" class="form-control" value="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Batch Expiry (Hand-entered)</label>
+            <input type="date" name="expiry_date" class="form-control" value="2026-12-31">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Save Product</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: ADD BATCH (GOODS ARRIVAL) -->
+  <!-- ================================================================= -->
+  <div class="modal-overlay" id="addBatchModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3>📥 Add Goods / New Batch</h3>
+          <span id="batchModalProductName" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+        </div>
+        <button class="modal-close" onclick="hideModal('addBatchModal')">&times;</button>
+      </div>
+
+      <form id="addBatchForm">
+        <div class="form-group">
+          <label class="form-label">Product Barcode (Scan or Type)</label>
+          <input type="text" name="barcode" class="form-control" placeholder="Scan product barcode..." required>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Quantity Arrived</label>
+            <input type="number" name="quantity" class="form-control" min="1" placeholder="e.g. 25" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Batch Expiry Date</label>
+            <input type="date" name="expiry_date" class="form-control" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Batch Number (Optional)</label>
+          <input type="text" name="batch_number" class="form-control" placeholder="e.g. B-OCT26-01">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Add Batch Stock</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: UPI QR PAYMENT -->
+  <!-- ================================================================= -->
+  <div class="modal-overlay" id="upiQrModal">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+      <div class="modal-header">
+        <h3 style="margin: 0 auto;">📱 UPI QR Payment</h3>
+        <button class="modal-close" onclick="hideModal('upiQrModal')">&times;</button>
+      </div>
+
+      <div class="qr-container">
+        <div class="upi-amount-pill" id="upiQrAmount">₹0.00</div>
+        <img id="upiQrImage" class="qr-image" src="" alt="UPI QR Code">
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+          Pay to: <strong id="upiQrMerchant">Store</strong> (<span id="upiQrId"></span>)
+        </div>
+        <p style="font-size: 0.78rem; color: #64748b; margin-top: 0.5rem;">
+          Scan with GPay, PhonePe, Paytm or any UPI App
+        </p>
+      </div>
+
+      <button class="btn btn-accent btn-block" onclick="handleConfirmUpiReceived()" style="font-size: 1rem; padding: 0.8rem;">
+        ✓ Payment Received
+      </button>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: DIGITAL RECEIPT -->
+  <!-- ================================================================= -->
+  <div class="modal-overlay" id="receiptModal">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3>🧾 Digital Receipt</h3>
+        <button class="modal-close" onclick="hideModal('receiptModal')">&times;</button>
+      </div>
+
+      <div class="receipt-paper" id="receiptPrintArea">
+        <div class="receipt-header">
+          <div class="receipt-logo" id="receiptShopName">AGORAZURE STORE</div>
+          <div id="receiptShopAddress">Indiranagar, Bengaluru</div>
+          <div id="receiptShopPhone">Ph: 9810011111</div>
+        </div>
+
+        <div class="receipt-row">
+          <span>Bill No:</span>
+          <span id="receiptNumber">BILL-20261008-001</span>
+        </div>
+        <div class="receipt-row">
+          <span>Date/Time:</span>
+          <span id="receiptDate">2026-10-08 14:00</span>
+        </div>
+        <div class="receipt-row">
+          <span>Payment:</span>
+          <span id="receiptPayMethod" style="font-weight: bold;">CASH</span>
+        </div>
+
+        <div class="receipt-divider"></div>
+
+        <div id="receiptItemsTbody">
+          <!-- Populated via JS -->
+        </div>
+
+        <div class="receipt-divider"></div>
+
+        <div class="receipt-total">
+          <span>GRAND TOTAL:</span>
+          <span id="receiptTotal">₹0.00</span>
+        </div>
+
+        <div style="text-align: center; margin-top: 1rem; font-size: 0.75rem; color: #64748b;">
+          * FEFO Stock Deducted Automatically *<br>
+          Thank you for shopping local!
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+        <button class="btn btn-secondary btn-block" onclick="printReceipt()">🖨️ Print Receipt</button>
+        <button class="btn btn-primary btn-block" onclick="hideModal('receiptModal')">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: CREATE SEASONAL OFFER -->
+  <!-- ================================================================= -->
+  <div class="modal-overlay" id="createOfferModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🏷️ Create Seasonal Offer</h3>
+        <button class="modal-close" onclick="hideModal('createOfferModal')">&times;</button>
+      </div>
+
+      <form id="createOfferForm">
+        <div class="form-group">
+          <label class="form-label">Offer Title</label>
+          <input type="text" name="title" class="form-control" placeholder="e.g. Diwali Weekend Snacks Special" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Discount Percentage (%)</label>
+          <input type="number" step="1" name="discount_percent" class="form-control" value="15" min="1" max="90" required>
+        </div>
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Valid From</label>
+            <input type="date" name="valid_from" class="form-control" value="2026-10-08" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Valid To</label>
+            <input type="date" name="valid_to" class="form-control" value="2026-10-31" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Publish Offer</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/static/js/shopkeeper.js"></script>
+</body>
+</html>
