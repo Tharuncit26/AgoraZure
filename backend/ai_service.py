@@ -200,9 +200,11 @@ async def suggest_substitutes(
         substitutes.append({
             "product_id": item.get("id"),
             "product_name": item.get("name"),
+            "shop_id": item.get("shop_id", 1),
             "shop_name": item.get("shop_name", "Nearby Partner"),
             "price": item.get("price"),
             "distance_km": item.get("distance_km", 0.5),
+            "has_shared_delivery": item.get("has_shared_delivery", True),
             "reason": f"Popular in {item.get('category', 'same category')} — in stock at {item.get('shop_name', 'nearby shop')} ({item.get('distance_km', 0.5)} km away)."
         })
 

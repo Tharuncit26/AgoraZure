@@ -11,12 +11,7 @@ from backend.haversine import recompute_delivery_clusters
 def hash_pwd(pwd: str) -> str:
     return hashlib.sha256(pwd.strip().encode("utf-8")).hexdigest()
 
-def seed_database():
-    print("Clearing and creating database schema...")
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-    db = SessionLocal()
+def populate_data(db):
     today = datetime.utcnow().date()
 
     print("Seeding Shops and Shopkeepers...")
@@ -293,8 +288,28 @@ def seed_database():
     ))
 
     db.commit()
-    db.close()
     print("Seed data successfully populated!")
+
+def seed_database():
+    print("Clearing and creating database schema...")
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        populate_data(db)
+    finally:
+        db.close()
+
+def seed_if_empty():
+    db = SessionLocal()
+    try:
+        if db.query(Shop).count() == 0:
+            print("Database is empty. Populating seed data...")
+            populate_data(db)
+    except Exception as e:
+        print(f"Error checking or seeding database: {e}")
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     seed_database()

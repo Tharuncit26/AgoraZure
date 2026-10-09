@@ -100,6 +100,14 @@ class OfferCreateRequest(BaseModel):
     valid_from: str
     valid_to: str
 
+class OfferUpdateRequest(BaseModel):
+    product_id: Optional[int] = None
+    title: Optional[str] = None
+    discount_percent: Optional[float] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+    active: Optional[bool] = None
+
 # =========================================================================
 # MISSED SEARCH SCHEMAS
 # =========================================================================

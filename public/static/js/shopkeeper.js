@@ -141,7 +141,11 @@ async function handleRegisterShop(e) {
   }
 }
 
+let ordersPollInterval = null;
+let currentOrderFilter = "";
+
 function logout() {
+  if (ordersPollInterval) clearInterval(ordersPollInterval);
   localStorage.removeItem("agorazure_shopkeeper");
   currentShop = null;
   location.reload();
@@ -160,6 +164,13 @@ function loadAllShopData() {
   loadSharedDelivery();
   loadMarketing();
   focusScanner();
+
+  if (ordersPollInterval) clearInterval(ordersPollInterval);
+  ordersPollInterval = setInterval(() => {
+    if (currentShop && currentShop.shop_id) {
+      loadOrders(currentOrderFilter, true);
+    }
+  }, 3000);
 }
 
 // Switch navigation tabs
@@ -469,10 +480,20 @@ async function loadStock() {
       shopCatalog = data.products;
       renderStockTable(shopCatalog);
       populateShrinkageProductDropdown(shopCatalog);
+      populateOfferProductsDropdown(shopCatalog);
     }
   } catch (err) {
     console.error("Error loading stock:", err);
   }
+}
+
+function populateOfferProductsDropdown(products) {
+  const sel = document.getElementById("offerProductSelect");
+  if (!sel) return;
+  const currentVal = sel.value;
+  sel.innerHTML = `<option value="">All Products (Store-wide Offer)</option>` +
+    (products || []).map(p => `<option value="${p.id}">${p.name} (₹${Number(p.price).toFixed(2)})</option>`).join("");
+  if (currentVal) sel.value = currentVal;
 }
 
 function renderStockTable(products) {
@@ -759,8 +780,9 @@ async function loadDemandInsights() {
 // 7. ONLINE ORDERS MANAGEMENT
 // =========================================================================
 
-async function loadOrders(filterStatus = "") {
+async function loadOrders(filterStatus = "", isSilent = false) {
   if (!currentShop) return;
+  currentOrderFilter = filterStatus;
   const container = document.getElementById("ordersListContainer");
   const url = filterStatus 
     ? `${API_BASE}/orders/shopkeeper/list?shop_id=${currentShop.shop_id}&status_filter=${filterStatus}`
@@ -771,65 +793,112 @@ async function loadOrders(filterStatus = "") {
     const data = await res.json();
 
     if (res.ok && data.success) {
-      document.getElementById("ordersCountBadge").textContent = data.count;
+      const prevBadge = document.getElementById("ordersCountBadge");
+      const prevCount = prevBadge ? parseInt(prevBadge.textContent || "0") : 0;
+      if (prevBadge) prevBadge.textContent = data.count;
+
+      if (isSilent && data.count > prevCount) {
+        showToast(`🔔 New order received! Total: ${data.count}`, "success");
+      }
+
       if (data.orders.length === 0) {
         container.innerHTML = `<div class="empty-state">No orders matching this filter.</div>`;
         return;
       }
 
+      const statusBadgeStyles = {
+        pending: "background: #fef3c7; color: #b45309;",
+        accepted: "background: #dbeafe; color: #1d4ed8;",
+        preparing: "background: #f3e8ff; color: #7e22ce;",
+        ready: "background: #cffafe; color: #0e7490;",
+        delivered: "background: #dcfce7; color: #15803d;",
+        rejected: "background: #fee2e2; color: #b91c1c;",
+        completed: "background: #dcfce7; color: #15803d;",
+        picked_up: "background: #dcfce7; color: #15803d;",
+        out_for_delivery: "background: #fed7aa; color: #c2410c;"
+      };
+
       container.innerHTML = data.orders.map(o => {
-        const statusColors = {
-          pending: "badge-warning",
-          accepted: "badge-primary",
-          ready: "badge-primary",
-          out_for_delivery: "badge-warning",
-          picked_up: "badge-success",
-          completed: "badge-success"
-        };
-        const badgeColor = statusColors[o.status] || "badge-neutral";
+        const orderId = o.orderId || o.id;
+        const shopId = o.shopId || o.shop_id;
+        const shopperName = o.shopper_name || (o.shopper ? o.shopper.name : "Shopper");
+        const shopperPhone = o.shopper_phone || (o.shopper ? o.shopper.phone : "");
+        const items = o.items || [];
+        const quantity = o.quantity || items.reduce((sum, it) => sum + it.quantity, 0);
+        const total = (o.total !== undefined ? o.total : o.total_amount) || 0;
+        const time = o.time || o.created_at;
+        const status = (o.status || "pending").toLowerCase();
+        const badgeStyle = statusBadgeStyles[status] || "background: #f1f5f9; color: #475569;";
 
         return `
-          <div class="card" style="margin-bottom: 1rem;">
-            <div class="card-header" style="margin-bottom: 0.6rem; padding-bottom: 0.5rem;">
+          <div class="card" style="margin-bottom: 1rem; border-left: 4px solid var(--primary);">
+            <div class="card-header" style="margin-bottom: 0.6rem; padding-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
               <div>
-                <strong>${o.order_number}</strong>
-                <span class="badge ${badgeColor}" style="margin-left: 0.4rem;">${o.status.replace(/_/g, ' ')}</span>
+                <strong style="font-size: 1.05rem;">${o.order_number}</strong>
+                <span style="font-size: 0.78rem; color: var(--text-muted); margin-left: 0.4rem;">(ID: ${orderId} • Shop ID: ${shopId})</span>
+                <span class="badge" style="margin-left: 0.5rem; text-transform: uppercase; font-weight: 700; ${badgeStyle}">
+                  ${status.replace(/_/g, ' ')}
+                </span>
               </div>
-              <div style="font-weight: 800; font-size: 1.1rem; color: var(--primary);">₹${o.total_amount.toFixed(2)}</div>
+              <div style="font-weight: 800; font-size: 1.15rem; color: var(--primary);">₹${Number(total).toFixed(2)}</div>
             </div>
 
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">
-              <div>Customer: <strong>${o.shopper.name}</strong> (${o.shopper.phone})</div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem;">
+              <div>Shopper: <strong>${shopperName}</strong> ${shopperPhone ? `(${shopperPhone})` : ''}</div>
               <div>Collect: <strong>${o.collect_option === 'home_delivery' ? '🛵 Home Delivery' : '🏬 Pickup'}</strong></div>
+              <div>Time: <strong>${time}</strong></div>
             </div>
 
-            <div style="background: #f8fafc; padding: 0.6rem; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 0.8rem;">
-              ${o.items.map(it => `<div>• ${it.product_name} x ${it.quantity} (₹${it.subtotal.toFixed(2)})</div>`).join("")}
+            <div style="background: #f8fafc; padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 0.8rem; border: 1px solid var(--surface-border);">
+              <div style="font-weight: 600; margin-bottom: 0.3rem;">Items (${quantity} total qty):</div>
+              ${items.map(it => `
+                <div style="display: flex; justify-content: space-between; padding: 0.15rem 0;">
+                  <span>• ${it.product_name} × <strong>${it.quantity}</strong></span>
+                  <span>₹${Number(it.subtotal).toFixed(2)}</span>
+                </div>
+              `).join("")}
             </div>
 
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-              ${o.status === 'pending' ? `
-                <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${o.id}, 'accepted')">Accept Order</button>
-              ` : ''}
-              ${o.status === 'accepted' ? `
-                <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${o.id}, 'ready')">Mark Ready</button>
-              ` : ''}
-              ${o.status === 'ready' && o.collect_option === 'home_delivery' ? `
-                <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${o.id}, 'out_for_delivery')">Out for Delivery</button>
-              ` : ''}
-              ${o.status === 'ready' && o.collect_option === 'pickup' ? `
-                <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${o.id}, 'completed')">Customer Picked Up</button>
-              ` : ''}
-              ${o.status === 'out_for_delivery' ? `
-                <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${o.id}, 'completed')">Delivered</button>
-              ` : ''}
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; padding-top: 0.4rem; border-top: 1px solid var(--surface-border);">
+              <!-- Quick Action Transition Buttons -->
+              <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                ${status === 'pending' ? `
+                  <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'accepted')">✓ Accept Order</button>
+                  <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${orderId}, 'rejected')">✕ Reject</button>
+                ` : ''}
+                ${status === 'accepted' ? `
+                  <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'preparing')">🍳 Start Preparing</button>
+                  <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${orderId}, 'ready')">Ready</button>
+                  <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${orderId}, 'rejected')">Reject</button>
+                ` : ''}
+                ${status === 'preparing' ? `
+                  <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${orderId}, 'ready')">✓ Mark Ready</button>
+                  <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${orderId}, 'rejected')">Reject</button>
+                ` : ''}
+                ${status === 'ready' ? `
+                  <button class="btn btn-success btn-sm" onclick="updateOrderStatus(${orderId}, 'delivered')">🛵 Mark Delivered</button>
+                ` : ''}
+              </div>
+
+              <!-- Full Status Selector Dropdown -->
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">Change Status:</span>
+                <select class="form-control" style="width: auto; padding: 0.25rem 0.6rem; font-size: 0.82rem; height: auto;" onchange="updateOrderStatus(${orderId}, this.value)">
+                  <option value="pending" ${status === 'pending' ? 'selected' : ''}>Pending</option>
+                  <option value="accepted" ${status === 'accepted' ? 'selected' : ''}>Accepted</option>
+                  <option value="preparing" ${status === 'preparing' ? 'selected' : ''}>Preparing</option>
+                  <option value="ready" ${status === 'ready' ? 'selected' : ''}>Ready</option>
+                  <option value="delivered" ${status === 'delivered' ? 'selected' : ''}>Delivered</option>
+                  <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>Rejected</option>
+                </select>
+              </div>
             </div>
           </div>
         `;
       }).join("");
     }
   } catch (err) {
-    console.error("Error loading orders:", err);
+    if (!isSilent) console.error("Error loading orders:", err);
   }
 }
 
@@ -842,8 +911,8 @@ async function updateOrderStatus(orderId, newStatus) {
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(data.message, "success");
-      loadOrders();
+      showToast(data.message || `Order status updated to ${newStatus}`, "success");
+      loadOrders(currentOrderFilter);
       loadStock();
     } else {
       showToast(data.detail || "Failed to update status", "danger");
@@ -959,26 +1028,35 @@ async function loadLoyaltySummary() {
   }
 }
 
+let activeOffers = [];
+
 async function loadOffers() {
+  if (!currentShop) return;
   try {
     const res = await fetch(`${API_BASE}/marketing/offers?shop_id=${currentShop.shop_id}`);
     const data = await res.json();
     if (res.ok && data.success) {
+      activeOffers = data.offers || [];
       const container = document.getElementById("offersListContainer");
-      if (data.offers.length === 0) {
-        container.innerHTML = `<div class="empty-state">No seasonal offers active. Click 'Create Offer' to add one.</div>`;
+      if (activeOffers.length === 0) {
+        container.innerHTML = `<div class="empty-state">No active seasonal offers. Click '+ New Offer' to create one.</div>`;
         return;
       }
-      container.innerHTML = data.offers.map(o => `
-        <div class="insight-card urgency-low" style="display: flex; justify-content: space-between; align-items: center;">
+      container.innerHTML = activeOffers.map(o => `
+        <div class="insight-card urgency-low" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-left: 4px solid var(--accent);">
           <div>
-            <strong>${o.title}</strong>
-            <span class="badge badge-success" style="margin-left: 0.4rem;">${o.discount_percent}% OFF</span>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-              Product: ${o.product_name} | Valid: ${o.valid_from} to ${o.valid_to}
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <strong style="font-size: 1.05rem;">${o.title}</strong>
+              <span class="badge badge-success" style="font-weight: 700;">${o.discount_percent}% OFF</span>
+            </div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.25rem;">
+              Product: <strong>${o.product_name}</strong> | Valid: <strong>${o.valid_from}</strong> to <strong>${o.valid_to}</strong>
             </div>
           </div>
-          <button class="btn btn-danger btn-sm" onclick="deleteOffer(${o.id})">Delete</button>
+          <div style="display: flex; gap: 0.4rem;">
+            <button class="btn btn-secondary btn-sm" onclick="openEditOfferModal(${o.id})">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteOffer(${o.id})">🗑️ Delete</button>
+          </div>
         </div>
       `).join("");
     }
@@ -987,46 +1065,138 @@ async function loadOffers() {
   }
 }
 
+function openCreateOfferModal() {
+  const form = document.getElementById("createOfferForm");
+  if (form) form.reset();
+  const editIdInput = document.getElementById("offerEditId");
+  if (editIdInput) editIdInput.value = "";
+  const titleEl = document.getElementById("offerModalTitle");
+  if (titleEl) titleEl.textContent = "🏷️ Create Seasonal Offer";
+  const submitBtn = document.getElementById("offerSubmitBtn");
+  if (submitBtn) submitBtn.textContent = "Publish Offer";
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const fromEl = document.getElementById("offerValidFromInput");
+  if (fromEl) fromEl.value = todayStr;
+  const toEl = document.getElementById("offerValidToInput");
+  if (toEl) toEl.value = nextMonth;
+
+  if (shopCatalog && shopCatalog.length > 0) {
+    populateOfferProductsDropdown(shopCatalog);
+  }
+
+  showModal("createOfferModal");
+}
+
+function openEditOfferModal(offerId) {
+  const offer = activeOffers.find(o => o.id === offerId);
+  if (!offer) return;
+
+  const form = document.getElementById("createOfferForm");
+  if (form) form.reset();
+
+  if (shopCatalog && shopCatalog.length > 0) {
+    populateOfferProductsDropdown(shopCatalog);
+  }
+
+  const editIdInput = document.getElementById("offerEditId");
+  if (editIdInput) editIdInput.value = offer.id;
+
+  const titleInput = document.getElementById("offerTitleInput");
+  if (titleInput) titleInput.value = offer.title;
+
+  const discountInput = document.getElementById("offerDiscountInput");
+  if (discountInput) discountInput.value = offer.discount_percent;
+
+  const productSelect = document.getElementById("offerProductSelect");
+  if (productSelect) productSelect.value = offer.product_id ? String(offer.product_id) : "";
+
+  const fromInput = document.getElementById("offerValidFromInput");
+  if (fromInput) fromInput.value = offer.valid_from;
+
+  const toInput = document.getElementById("offerValidToInput");
+  if (toInput) toInput.value = offer.valid_to;
+
+  const titleEl = document.getElementById("offerModalTitle");
+  if (titleEl) titleEl.textContent = "✏️ Edit Seasonal Offer";
+
+  const submitBtn = document.getElementById("offerSubmitBtn");
+  if (submitBtn) submitBtn.textContent = "Save Changes";
+
+  showModal("createOfferModal");
+}
+
 async function handleCreateOffer(e) {
   e.preventDefault();
   const form = e.target;
+  const editId = document.getElementById("offerEditId") ? document.getElementById("offerEditId").value : "";
+  const title = form.title.value.trim();
+  const discountPercent = parseFloat(form.discount_percent.value);
+  const productId = (form.product_id && form.product_id.value) ? parseInt(form.product_id.value) : null;
+  const validFrom = form.valid_from.value;
+  const validTo = form.valid_to.value;
+
+  if (!title) {
+    showToast("Offer title is required", "warning");
+    return;
+  }
+  if (isNaN(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
+    showToast("Please enter a valid discount percentage (1-100%)", "warning");
+    return;
+  }
+  if (!validFrom || !validTo) {
+    showToast("Start date and end date are required", "warning");
+    return;
+  }
+
   const payload = {
-    title: form.title.value.trim(),
-    discount_percent: parseFloat(form.discount_percent.value),
-    product_id: form.product_id.value ? parseInt(form.product_id.value) : null,
-    valid_from: form.valid_from.value,
-    valid_to: form.valid_to.value
+    title: title,
+    discount_percent: discountPercent,
+    product_id: productId,
+    valid_from: validFrom,
+    valid_to: validTo
   };
 
+  const isEdit = Boolean(editId);
+  const url = isEdit
+    ? `${API_BASE}/marketing/offers/${editId}?shop_id=${currentShop.shop_id}`
+    : `${API_BASE}/marketing/offers?shop_id=${currentShop.shop_id}`;
+  const method = isEdit ? "PUT" : "POST";
+
   try {
-    const res = await fetch(`${API_BASE}/marketing/offers?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
+    const res = await fetch(url, {
+      method: method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(data.message, "success");
+      showToast(data.message || (isEdit ? "Offer updated successfully!" : "Seasonal offer created successfully!"), "success");
       hideModal("createOfferModal");
       form.reset();
       loadOffers();
     } else {
-      showToast(data.detail || "Failed to create offer", "danger");
+      showToast(data.detail || "Failed to save offer", "danger");
     }
   } catch (err) {
-    showToast("Error creating offer", "danger");
+    console.error("Offer save error:", err);
+    showToast("Error saving offer. Please check connection.", "danger");
   }
 }
 
 async function deleteOffer(offerId) {
+  if (!confirm("Are you sure you want to delete this seasonal offer?")) return;
   try {
     const res = await fetch(`${API_BASE}/marketing/offers/${offerId}?shop_id=${currentShop.shop_id}`, {
       method: "DELETE"
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast("Offer removed", "success");
+      showToast(data.message || "Offer removed", "success");
       loadOffers();
+    } else {
+      showToast(data.detail || "Failed to delete offer", "danger");
     }
   } catch (err) {
     showToast("Error deleting offer", "danger");

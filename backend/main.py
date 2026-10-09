@@ -20,6 +20,13 @@ from backend.routes.loyalty_offers import router as loyalty_offers_router
 # Ensure all database tables exist
 Base.metadata.create_all(bind=engine)
 
+# Auto-seed if hosted database is freshly provisioned
+try:
+    from seed import seed_if_empty
+    seed_if_empty()
+except Exception:
+    pass
+
 app = FastAPI(
     title=APP_NAME,
     description="Smart Commerce Platform connecting local shops & shoppers (Zéphyr 2026 AI Hackathon - PS-2)",
@@ -72,11 +79,13 @@ def get_index():
     return HTMLResponse("<h1>AgoraZure Backend Running</h1><p>Frontend files initializing...</p>")
 
 @app.get("/shopper", response_class=FileResponse)
+@app.get("/shopper.html", response_class=FileResponse)
 def get_shopper_page():
     page = FRONTEND_DIR / "shopper.html"
     return FileResponse(page)
 
 @app.get("/shopkeeper", response_class=FileResponse)
+@app.get("/shopkeeper.html", response_class=FileResponse)
 def get_shopkeeper_page():
     page = FRONTEND_DIR / "shopkeeper.html"
     return FileResponse(page)

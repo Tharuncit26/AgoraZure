@@ -369,9 +369,9 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">
-              <span>🏷️</span> Seasonal Offers
+              <span>🏷️</span> Active Offers
             </div>
-            <button class="btn btn-primary btn-sm" onclick="showModal('createOfferModal')">+ New Offer</button>
+            <button class="btn btn-primary btn-sm" onclick="openCreateOfferModal()">+ New Offer</button>
           </div>
           <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
             Run festive discounts or clearance promotions across products.
@@ -659,30 +659,38 @@
   <div class="modal-overlay" id="createOfferModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>🏷️ Create Seasonal Offer</h3>
+        <h3 id="offerModalTitle">🏷️ Create Seasonal Offer</h3>
         <button class="modal-close" onclick="hideModal('createOfferModal')">&times;</button>
       </div>
 
       <form id="createOfferForm">
+        <input type="hidden" name="offer_id" id="offerEditId" value="">
         <div class="form-group">
           <label class="form-label">Offer Title</label>
-          <input type="text" name="title" class="form-control" placeholder="e.g. Diwali Weekend Snacks Special" required>
+          <input type="text" name="title" id="offerTitleInput" class="form-control" placeholder="e.g. Diwali Weekend Snacks Special" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Applicable Products</label>
+          <select name="product_id" id="offerProductSelect" class="form-control">
+            <option value="">All Products (Store-wide Offer)</option>
+            <!-- Dynamically populated from shop stock -->
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">Discount Percentage (%)</label>
-          <input type="number" step="1" name="discount_percent" class="form-control" value="15" min="1" max="90" required>
+          <input type="number" step="1" name="discount_percent" id="offerDiscountInput" class="form-control" value="15" min="1" max="90" required>
         </div>
         <div class="grid grid-cols-2">
           <div class="form-group">
-            <label class="form-label">Valid From</label>
-            <input type="date" name="valid_from" class="form-control" value="2026-10-08" required>
+            <label class="form-label">Start Date</label>
+            <input type="date" name="valid_from" id="offerValidFromInput" class="form-control" value="2026-10-01" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Valid To</label>
-            <input type="date" name="valid_to" class="form-control" value="2026-10-31" required>
+            <label class="form-label">End Date</label>
+            <input type="date" name="valid_to" id="offerValidToInput" class="form-control" value="2026-10-31" required>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Publish Offer</button>
+        <button type="submit" id="offerSubmitBtn" class="btn btn-primary btn-block">Publish Offer</button>
       </form>
     </div>
   </div>

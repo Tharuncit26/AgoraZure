@@ -21,14 +21,17 @@ if (os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")) and 
     db_url = f"sqlite:///{tmp_db}"
 
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+pg8000://", 1)
+elif db_url.startswith("postgresql://") and "+pg8000" not in db_url and "+psycopg2" not in db_url:
+    db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
 
 # SQLAlchemy database engine
-connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False} if "sqlite" in db_url else {}
 
 engine = create_engine(
     db_url,
     connect_args=connect_args,
+    pool_pre_ping=True,
     echo=False
 )
 

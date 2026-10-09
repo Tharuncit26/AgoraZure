@@ -21,6 +21,7 @@ router = APIRouter(prefix="/shopper-portal", tags=["Shopper Experience"])
 @router.get("/search")
 async def search_products(
     q: Optional[str] = Query(None, description="Product search query"),
+    shop_id: Optional[int] = Query(None, description="Filter by Shop ID"),
     shopper_lat: float = Query(12.9716, description="Shopper latitude"),
     shopper_lon: float = Query(77.5946, description="Shopper longitude"),
     shopper_id: Optional[str] = Query(None, description="Shopper ID for missed search logging"),
@@ -28,19 +29,34 @@ async def search_products(
 ):
     """
     Search for a product across nearby shops.
-    Returns matching shops with live stock, price, and Haversine distance in km.
-    If no stock is found anywhere, automatically logs a MISSED SEARCH and suggests
-    smart AI substitutes from available nearby products.
+    Ranks results: exact match first, starts-with second, contains third.
+    Applies active seasonal offers / discounts and calculates Haversine distance in km.
     """
     shopper_id_int = int(shopper_id) if (shopper_id and str(shopper_id).strip().isdigit()) else None
     all_shops = db.query(Shop).all()
     query_str = (q or "").strip()
 
+    # Query active seasonal offers
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    active_offers = db.query(Offer).filter(
+        Offer.active == True,
+        Offer.valid_from <= today_str,
+        Offer.valid_to >= today_str
+    ).all()
+
+    product_offers = {}
+    store_offers = {}
+    for off in active_offers:
+        if off.product_id:
+            product_offers[(off.shop_id, off.product_id)] = off
+        else:
+            if off.shop_id not in store_offers or off.discount_percent > store_offers[off.shop_id].discount_percent:
+                store_offers[off.shop_id] = off
+
     # Pre-calculate distances to all shops
     shop_distances = {}
     for s in all_shops:
         dist = haversine_distance(shopper_lat, shopper_lon, s.latitude, s.longitude)
-        # Check if shop supports home delivery (must belong to cluster with a rider)
         has_delivery = False
         if s.cluster_id:
             cluster_rider = db.query(DeliveryPerson).filter(DeliveryPerson.cluster_id == s.cluster_id).first()
@@ -54,25 +70,46 @@ async def search_products(
         }
 
     matches = []
-    available_catalog = []  # For potential smart substitute ranking
+    available_catalog = []
 
     # Collect products
     all_products = db.query(Product).all()
+    q_clean = query_str.lower()
+
     for prod in all_products:
+        if shop_id is not None and prod.shop_id != shop_id:
+            continue
+
         shop_info = shop_distances.get(prod.shop_id)
         if not shop_info:
             continue
 
-        # Live stock across active batches
         active_batches = [b for b in prod.batches if b.quantity > 0]
         live_stock = sum(b.quantity for b in active_batches)
         earliest_exp = sorted(b.expiry_date for b in active_batches)[0] if active_batches else "Out of Stock"
+
+        # Apply seasonal offer if available
+        matched_offer = product_offers.get((prod.shop_id, prod.id)) or store_offers.get(prod.shop_id)
+        if matched_offer:
+            discount_pct = matched_offer.discount_percent
+            effective_price = round(prod.price * (1.0 - discount_pct / 100.0), 2)
+            has_offer = True
+            offer_title = matched_offer.title
+        else:
+            discount_pct = 0.0
+            effective_price = prod.price
+            has_offer = False
+            offer_title = None
 
         item_repr = {
             "id": prod.id,
             "name": prod.name,
             "barcode": prod.barcode,
-            "price": prod.price,
+            "price": effective_price,
+            "original_price": prod.price,
+            "discount_percent": discount_pct,
+            "has_offer": has_offer,
+            "offer_title": offer_title,
             "category": prod.category,
             "live_stock": live_stock,
             "earliest_expiry": earliest_exp,
@@ -87,16 +124,55 @@ async def search_products(
         if live_stock > 0:
             available_catalog.append(item_repr)
 
-        # Match check
-        if query_str:
-            q_lower = query_str.lower()
-            if q_lower in prod.name.lower() or q_lower in prod.category.lower() or q_lower == prod.barcode.lower():
-                matches.append(item_repr)
-        else:
-            matches.append(item_repr)
+        if q_clean:
+            name_lower = prod.name.strip().lower()
+            cat_lower = prod.category.strip().lower()
+            shop_lower = shop_info["shop"].name.strip().lower()
+            barcode_lower = prod.barcode.strip().lower()
 
-    # Sort matches by distance
-    matches.sort(key=lambda x: (x["distance_km"], -x["live_stock"]))
+            in_name = q_clean in name_lower
+            in_cat = q_clean in cat_lower
+            in_shop = q_clean in shop_lower
+            in_barcode = (q_clean == barcode_lower or q_clean in barcode_lower)
+
+            if not (in_name or in_cat or in_shop or in_barcode):
+                continue
+
+            # Ranking: Exact match first, starts-with second, contains third
+            name_words = name_lower.split()
+            cat_words = cat_lower.split()
+            shop_words = shop_lower.split()
+
+            if name_lower == q_clean:
+                rank = 1
+            elif cat_lower == q_clean:
+                rank = 2
+            elif shop_lower == q_clean:
+                rank = 3
+            elif barcode_lower == q_clean:
+                rank = 4
+            elif name_lower.startswith(q_clean) or any(w.startswith(q_clean) for w in name_words):
+                rank = 10
+            elif cat_lower.startswith(q_clean) or any(w.startswith(q_clean) for w in cat_words):
+                rank = 11
+            elif shop_lower.startswith(q_clean) or any(w.startswith(q_clean) for w in shop_words):
+                rank = 12
+            elif in_name:
+                rank = 20
+            elif in_cat:
+                rank = 21
+            elif in_shop:
+                rank = 22
+            else:
+                rank = 25
+            item_repr["match_rank"] = rank
+        else:
+            item_repr["match_rank"] = 50
+
+        matches.append(item_repr)
+
+    # Sort matches by match_rank (exact > starts-with > contains), then distance, then live stock
+    matches.sort(key=lambda x: (x["match_rank"], x["distance_km"], -x["live_stock"]))
 
     # Check if this search was unmet (zero results OR all matching have 0 stock)
     in_stock_matches = [m for m in matches if m["live_stock"] > 0]

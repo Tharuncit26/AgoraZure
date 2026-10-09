@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models import LoyaltyPoint, Offer, Product, Shopper, Shop
-from backend.schemas import OfferCreateRequest
+from backend.schemas import OfferCreateRequest, OfferUpdateRequest
 
 router = APIRouter(prefix="/marketing", tags=["Loyalty & Seasonal Offers"])
 
@@ -118,6 +118,50 @@ def create_offer(
         "success": True,
         "message": f"Seasonal offer '{new_offer.title}' created successfully!",
         "offer_id": new_offer.id
+    }
+
+@router.put("/offers/{offer_id}")
+def update_offer(
+    offer_id: int,
+    payload: OfferUpdateRequest,
+    shop_id: int = Query(..., description="Shop ID"),
+    db: Session = Depends(get_db)
+):
+    """Shopkeeper updates an existing seasonal offer."""
+    offer = db.query(Offer).filter(Offer.id == offer_id, Offer.shop_id == shop_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found.")
+
+    if payload.title is not None:
+        offer.title = payload.title.strip()
+    if payload.discount_percent is not None:
+        offer.discount_percent = payload.discount_percent
+    if payload.valid_from is not None:
+        offer.valid_from = payload.valid_from.strip()
+    if payload.valid_to is not None:
+        offer.valid_to = payload.valid_to.strip()
+    fields_set = getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+    if payload.product_id is not None or "product_id" in fields_set:
+        offer.product_id = payload.product_id
+    if payload.active is not None:
+        offer.active = payload.active
+
+    db.commit()
+    db.refresh(offer)
+
+    return {
+        "success": True,
+        "message": f"Seasonal offer '{offer.title}' updated successfully!",
+        "offer": {
+            "id": offer.id,
+            "title": offer.title,
+            "discount_percent": offer.discount_percent,
+            "product_id": offer.product_id,
+            "product_name": offer.product.name if offer.product else "All Products (Store-wide)",
+            "valid_from": offer.valid_from,
+            "valid_to": offer.valid_to,
+            "active": offer.active
+        }
     }
 
 @router.delete("/offers/{offer_id}")

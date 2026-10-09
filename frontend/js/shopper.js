@@ -28,6 +28,7 @@ let currentOrderReceipt = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initShopperAuth();
+  checkLoggedInShopkeeperForShopper();
   setupShopperEvents();
   loadUseSoonDeals();
   performSearch(""); // Initial catalog load
@@ -165,11 +166,14 @@ function shopperLogout() {
 async function performSearch(query = "") {
   const container = document.getElementById("searchResultsContainer");
   const substitutesContainer = document.getElementById("substitutesContainer");
-  substitutesContainer.style.display = "none";
+  if (substitutesContainer) substitutesContainer.style.display = "none";
 
   const sId = (currentShopper && currentShopper.id) ? currentShopper.id : "";
   const queryParam = sId ? `&shopper_id=${sId}` : "";
-  const url = `${API_BASE}/shopper-portal/search?q=${encodeURIComponent(query)}&shopper_lat=${shopperLocation.lat}&shopper_lon=${shopperLocation.lon}${queryParam}`;
+  const shopFilterEl = document.getElementById("shopperShopFilter");
+  const shopFilterParam = (shopFilterEl && shopFilterEl.value) ? `&shop_id=${shopFilterEl.value}` : "";
+
+  const url = `${API_BASE}/shopper-portal/search?q=${encodeURIComponent(query)}&shopper_lat=${shopperLocation.lat}&shopper_lon=${shopperLocation.lon}${queryParam}${shopFilterParam}`;
 
   try {
     const res = await fetch(url);
@@ -187,10 +191,10 @@ async function performSearch(query = "") {
       // 2. Render Search Results
       if (data.products.length === 0) {
         container.innerHTML = `
-          <div class="empty-state" style="grid-column: 1 / -1;">
+          <div class="empty-state" style="grid-column: 1 / -1; padding: 2.5rem 1rem;">
             <div class="empty-icon">🔎</div>
-            <h3>No matching products in nearby shops</h3>
-            <p>Your search for "<strong>${data.query}</strong>" has been logged. When any nearby shopkeeper stocks this item, you will be notified!</p>
+            <h3 style="font-size: 1.2rem; margin-bottom: 0.5rem; color: var(--text-dark);">No items found</h3>
+            <p style="color: var(--text-muted);">${query ? `No items matching "<strong>${query}</strong>" were found.` : 'No products available for this filter.'}</p>
           </div>
         `;
         return;
@@ -198,24 +202,45 @@ async function performSearch(query = "") {
 
       container.innerHTML = data.products.map(p => {
         const inStock = p.live_stock > 0;
+        const hasOffer = Boolean(p.has_offer);
+        const originalPrice = p.original_price || p.price;
+        const currentPrice = p.price;
+
         return `
-          <div class="product-card">
+          <div class="product-card" style="${hasOffer ? 'border: 2px solid #86efac; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.1);' : ''}">
             <div>
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem;">
-                <span class="badge badge-neutral">${p.category}</span>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem; flex-wrap: wrap; gap: 0.3rem;">
+                <div style="display: flex; gap: 0.3rem; align-items: center;">
+                  <span class="badge badge-neutral">${p.category}</span>
+                  ${hasOffer ? `<span class="badge badge-success" style="background: #dcfce7; color: #15803d; font-weight: 700;">🏷️ ${p.discount_percent}% OFF</span>` : ''}
+                </div>
                 <span style="font-size: 0.78rem; font-weight: 700; color: var(--primary);">
                   📍 ${p.distance_km} km away
                 </span>
               </div>
               <h3 style="font-size: 1.05rem; margin-bottom: 0.25rem;">${p.name}</h3>
-              <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-                Sold by <strong>${p.shop_name}</strong>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+                Sold by <strong>${p.shop_name}</strong> (Shop ID: ${p.shop_id})
               </div>
+              ${hasOffer && p.offer_title ? `
+                <div style="font-size: 0.78rem; font-weight: 600; color: #16a34a; margin-bottom: 0.4rem;">
+                  🎉 Offer: ${p.offer_title}
+                </div>
+              ` : ''}
             </div>
 
             <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--surface-border);">
               <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem;">
-                <div class="product-price">₹${p.price.toFixed(2)}</div>
+                <div>
+                  ${hasOffer ? `
+                    <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+                      <span class="deal-strike" style="font-size: 0.85rem; color: #94a3b8; text-decoration: line-through;">₹${Number(originalPrice).toFixed(2)}</span>
+                      <span class="product-price" style="color: #16a34a; font-size: 1.2rem; font-weight: 800;">₹${Number(currentPrice).toFixed(2)}</span>
+                    </div>
+                  ` : `
+                    <div class="product-price">₹${Number(currentPrice).toFixed(2)}</div>
+                  `}
+                </div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: ${inStock ? 'var(--accent)' : 'var(--danger)'};">
                   ${inStock ? `● ${p.live_stock} in stock` : '● Out of stock'}
                 </div>
@@ -227,10 +252,10 @@ async function performSearch(query = "") {
 
               <button 
                 class="btn ${inStock ? 'btn-primary' : 'btn-secondary'} btn-sm btn-block" 
-                onclick="addToCart(${p.id}, '${p.name.replace(/'/g, "\\'")}', ${p.price}, ${p.shop_id}, '${p.shop_name.replace(/'/g, "\\'")}', ${p.has_shared_delivery})"
+                onclick="addToCart(${p.id}, '${p.name.replace(/'/g, "\\'")}', ${currentPrice}, ${p.shop_id}, '${p.shop_name.replace(/'/g, "\\'")}', ${p.has_shared_delivery})"
                 ${!inStock ? 'disabled' : ''}
               >
-                ${inStock ? '+ Add to Cart' : 'Unavailable'}
+                ${inStock ? (hasOffer ? '+ Add to Cart (Discounted)' : '+ Add to Cart') : 'Unavailable'}
               </button>
             </div>
           </div>
@@ -246,23 +271,27 @@ async function performSearch(query = "") {
 function renderSmartSubstitutes(missingItem, subs) {
   const container = document.getElementById("substitutesContainer");
   const list = document.getElementById("substitutesList");
+  if (!container || !list) return;
   container.style.display = "block";
   document.getElementById("missingItemTitle").textContent = missingItem;
 
-  list.innerHTML = subs.map(s => `
-    <div style="background: #ffffff; border: 1px solid #bae6fd; border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-      <div style="flex: 1; min-width: 220px;">
-        <div style="font-weight: 700; font-size: 0.95rem; color: var(--secondary);">✨ ${s.product_name}</div>
-        <div style="font-size: 0.8rem; color: var(--primary-dark); margin: 0.2rem 0;">
-          ${s.shop_name} (📍 ${s.distance_km} km) • <strong>₹${s.price.toFixed(2)}</strong>
+  list.innerHTML = subs.map(s => {
+    const shopId = s.shop_id || 1;
+    return `
+      <div style="background: #ffffff; border: 1px solid #bae6fd; border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="flex: 1; min-width: 220px;">
+          <div style="font-weight: 700; font-size: 0.95rem; color: var(--secondary);">✨ ${s.product_name}</div>
+          <div style="font-size: 0.8rem; color: var(--primary-dark); margin: 0.2rem 0;">
+            ${s.shop_name} (Shop ID: ${shopId} • 📍 ${s.distance_km} km) • <strong>₹${Number(s.price).toFixed(2)}</strong>
+          </div>
+          <div style="font-size: 0.78rem; color: #475569; font-style: italic;">"${s.reason}"</div>
         </div>
-        <div style="font-size: 0.78rem; color: #475569; font-style: italic;">"${s.reason}"</div>
+        <button class="btn btn-primary btn-sm" onclick="addToCartFromSubstitute(${s.product_id}, '${s.product_name.replace(/'/g, "\\'")}', ${s.price}, ${shopId}, '${s.shop_name.replace(/'/g, "\\'")}')">
+          Add Substitute
+        </button>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="addToCartFromSubstitute(${s.product_id}, '${s.product_name.replace(/'/g, "\\'")}', ${s.price}, '${s.shop_name.replace(/'/g, "\\'")}')">
-        Add Substitute
-      </button>
-    </div>
-  `).join("");
+    `;
+  }).join("");
 }
 
 // =========================================================================
@@ -346,9 +375,8 @@ function addToCart(productId, name, price, shopId, shopName, hasSharedDelivery =
   showToast(`Added ${name} to Cart`, "success");
 }
 
-function addToCartFromSubstitute(productId, name, price, shopName) {
-  // Find product's shop info from catalog or assume 1
-  addToCart(productId, name, price, 1, shopName, true);
+function addToCartFromSubstitute(productId, name, price, shopId = 1, shopName = "Nearby Partner") {
+  addToCart(productId, name, price, shopId, shopName, true);
 }
 
 function updateCartBadge() {
@@ -547,7 +575,49 @@ async function loadLoyaltyPoints() {
   }
 }
 
-async function loadOrderHistory() {
+let shopperOrderPollInterval = null;
+
+function checkLoggedInShopkeeperForShopper() {
+  const savedShopkeeper = localStorage.getItem("agorazure_shopkeeper");
+  if (savedShopkeeper) {
+    try {
+      const sk = JSON.parse(savedShopkeeper);
+      if (sk && sk.shop_id) {
+        const badge = document.getElementById("loggedInShopBadge");
+        const nameEl = document.getElementById("loggedInShopName");
+        if (badge && nameEl) {
+          nameEl.textContent = sk.shop_name || `Shop #${sk.shop_id}`;
+          badge.style.display = "block";
+        }
+      }
+    } catch (e) {}
+  }
+}
+
+function filterByLoggedInShop() {
+  const savedShopkeeper = localStorage.getItem("agorazure_shopkeeper");
+  if (savedShopkeeper) {
+    try {
+      const sk = JSON.parse(savedShopkeeper);
+      const filter = document.getElementById("shopperShopFilter");
+      if (filter && sk.shop_id) {
+        filter.value = String(sk.shop_id);
+        const searchInput = document.getElementById("shopperSearchInput");
+        const q = searchInput ? searchInput.value.trim() : "";
+        performSearch(q);
+        showToast(`Filtered items to ${sk.shop_name} (Shop ID: ${sk.shop_id})`, "info");
+      }
+    } catch (e) {}
+  }
+}
+
+function handleShopFilterChange() {
+  const searchInput = document.getElementById("shopperSearchInput");
+  const q = searchInput ? searchInput.value.trim() : "";
+  performSearch(q);
+}
+
+async function loadOrderHistory(isSilent = false) {
   if (!currentShopper) return;
   try {
     const res = await fetch(`${API_BASE}/orders/shopper/history?shopper_id=${currentShopper.id}`);
@@ -560,29 +630,56 @@ async function loadOrderHistory() {
         return;
       }
 
-      container.innerHTML = data.orders.map(o => `
-        <div class="card" style="margin-bottom: 0.75rem;">
-          <div class="card-header" style="margin-bottom: 0.4rem; padding-bottom: 0.4rem;">
-            <div>
-              <strong>${o.order_number}</strong>
-              <span class="badge badge-primary" style="margin-left: 0.4rem;">${o.status.replace(/_/g, ' ')}</span>
+      const statusBadgeStyles = {
+        pending: "background: #fef3c7; color: #b45309;",
+        accepted: "background: #dbeafe; color: #1d4ed8;",
+        preparing: "background: #f3e8ff; color: #7e22ce;",
+        ready: "background: #cffafe; color: #0e7490;",
+        delivered: "background: #dcfce7; color: #15803d;",
+        rejected: "background: #fee2e2; color: #b91c1c;",
+        completed: "background: #dcfce7; color: #15803d;",
+        picked_up: "background: #dcfce7; color: #15803d;",
+        out_for_delivery: "background: #fed7aa; color: #c2410c;"
+      };
+
+      container.innerHTML = data.orders.map(o => {
+        const orderId = o.orderId || o.id;
+        const shopId = o.shopId || o.shop_id;
+        const status = (o.status || "pending").toLowerCase();
+        const badgeStyle = statusBadgeStyles[status] || "background: #f1f5f9; color: #475569;";
+        const total = (o.total !== undefined ? o.total : o.total_amount) || 0;
+        const time = o.time || o.created_at;
+        const items = o.items || [];
+        const quantity = o.quantity || items.reduce((s, it) => s + it.quantity, 0);
+
+        return `
+          <div class="card" style="margin-bottom: 0.85rem; border-left: 4px solid var(--primary);">
+            <div class="card-header" style="margin-bottom: 0.4rem; padding-bottom: 0.4rem; flex-wrap: wrap; gap: 0.4rem;">
+              <div>
+                <strong>${o.order_number}</strong>
+                <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.3rem;">(ID: ${orderId})</span>
+                <span class="badge" style="margin-left: 0.5rem; text-transform: uppercase; font-weight: 700; ${badgeStyle}">
+                  ${status.replace(/_/g, ' ')}
+                </span>
+              </div>
+              <div style="font-weight: 800; color: var(--primary); font-size: 1.1rem;">₹${Number(total).toFixed(2)}</div>
             </div>
-            <div style="font-weight: 800; color: var(--primary);">₹${o.total_amount.toFixed(2)}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+              Shop: <strong>${o.shop_name}</strong> (Shop ID: ${shopId}) • ${o.collect_option === 'home_delivery' ? '🛵 Home Delivery' : '🏬 Pickup'} • ${time}
+            </div>
+            <div style="background: #f8fafc; padding: 0.5rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 0.5rem; border: 1px solid var(--surface-border);">
+              <div style="font-weight: 600; margin-bottom: 0.2rem;">Items (${quantity} items):</div>
+              ${items.map(it => `• ${it.product_name} × <strong>${it.quantity}</strong> (₹${Number(it.subtotal).toFixed(2)})`).join("<br>")}
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="showShopperReceipt('${o.order_number}')" style="margin-top: 0.2rem;">
+              🧾 View Digital Receipt
+            </button>
           </div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-            From: <strong>${o.shop_name}</strong> • ${o.collect_option === 'home_delivery' ? '🛵 Home Delivery' : '🏬 Pickup'} • ${o.created_at}
-          </div>
-          <div style="font-size: 0.85rem;">
-            ${o.items.map(it => `• ${it.product_name} x ${it.quantity} (₹${it.subtotal.toFixed(2)})`).join("<br>")}
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="showShopperReceipt('${o.order_number}')" style="margin-top: 0.6rem;">
-            🧾 View Digital Receipt
-          </button>
-        </div>
-      `).join("");
+        `;
+      }).join("");
     }
   } catch (err) {
-    console.error(err);
+    if (!isSilent) console.error(err);
   }
 }
 
@@ -598,8 +695,13 @@ function setupShopperEvents() {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         performSearch(e.target.value.trim());
-      }, 350);
+      }, 150); // fast 150ms debounce for "update as I type"
     });
+  }
+
+  const shopFilter = document.getElementById("shopperShopFilter");
+  if (shopFilter) {
+    shopFilter.addEventListener("change", handleShopFilterChange);
   }
 
   const regForm = document.getElementById("registerShopperForm");
@@ -608,12 +710,27 @@ function setupShopperEvents() {
 
 function showModal(id) {
   const modal = document.getElementById(id);
-  if (modal) modal.classList.add("active");
+  if (modal) {
+    modal.classList.add("active");
+    if (id === "orderHistoryModal") {
+      loadOrderHistory();
+      if (shopperOrderPollInterval) clearInterval(shopperOrderPollInterval);
+      shopperOrderPollInterval = setInterval(() => {
+        loadOrderHistory(true);
+      }, 3000);
+    }
+  }
 }
 
 function hideModal(id) {
   const modal = document.getElementById(id);
-  if (modal) modal.classList.remove("active");
+  if (modal) {
+    modal.classList.remove("active");
+    if (id === "orderHistoryModal" && shopperOrderPollInterval) {
+      clearInterval(shopperOrderPollInterval);
+      shopperOrderPollInterval = null;
+    }
+  }
 }
 
 function showToast(message, type = "success") {

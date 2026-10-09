@@ -1,15 +1,19 @@
 from datetime import datetime
+import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import Order, OrderItem, Shop, Shopper, Product, Batch, LoyaltyPoint
+from backend.models import Order, OrderItem, Shop, Shopper, Product, Batch, LoyaltyPoint, Offer
 from backend.schemas import OrderCreateRequest, OrderStatusUpdateRequest
 
 router = APIRouter(prefix="/orders", tags=["Online Orders & Pre-books"])
 
-VALID_STATUSES = ["pending", "accepted", "ready", "picked_up", "out_for_delivery", "completed"]
+VALID_STATUSES = [
+    "pending", "accepted", "preparing", "ready", "delivered", "rejected",
+    "picked_up", "out_for_delivery", "completed"
+]
 
 # -------------------------------------------------------------------------
 # Create Online Order / Pre-Book (Shopper)
@@ -23,7 +27,7 @@ def create_order(
 ):
     """
     Shopper places an order (Buy from Home or Pre-book) with collect option
-    (Queue-free Pickup or Home Delivery).
+    (Queue-free Pickup or Home Delivery). Applies active seasonal discounts.
     """
     shopper = db.query(Shopper).filter(Shopper.id == shopper_id).first()
     if not shopper:
@@ -44,7 +48,7 @@ def create_order(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Cannot place empty order.")
 
-    order_num = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    order_num = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     total_amount = 0.0
 
     new_order = Order(
@@ -58,6 +62,8 @@ def create_order(
     )
     db.add(new_order)
     db.flush()
+
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
 
     for item_data in payload.items:
         product = db.query(Product).filter(
@@ -81,14 +87,27 @@ def create_order(
                 detail=f"Item '{product.name}' only has {avail} units available."
             )
 
-        line_subtotal = round(product.price * item_data.quantity, 2)
+        # Check for active seasonal offer on product or store-wide
+        offer = db.query(Offer).filter(
+            Offer.shop_id == payload.shop_id,
+            Offer.active == True,
+            Offer.valid_from <= today_str,
+            Offer.valid_to >= today_str,
+            (Offer.product_id == product.id) | (Offer.product_id == None)
+        ).order_by(Offer.product_id.desc(), Offer.discount_percent.desc()).first()
+
+        unit_price = product.price
+        if offer:
+            unit_price = round(product.price * (1.0 - offer.discount_percent / 100.0), 2)
+
+        line_subtotal = round(unit_price * item_data.quantity, 2)
         total_amount += line_subtotal
 
         order_item = OrderItem(
             order_id=new_order.id,
             product_id=product.id,
             quantity=item_data.quantity,
-            unit_price=product.price
+            unit_price=unit_price
         )
         db.add(order_item)
 
@@ -101,6 +120,8 @@ def create_order(
         "message": f"Order {new_order.order_number} placed successfully!",
         "order": {
             "id": new_order.id,
+            "orderId": new_order.id,
+            "shopId": new_order.shop_id,
             "order_number": new_order.order_number,
             "shop_name": shop.name,
             "order_type": new_order.order_type,
@@ -134,7 +155,7 @@ def list_shopkeeper_orders(
         items = [
             {
                 "product_id": it.product_id,
-                "product_name": it.product.name,
+                "product_name": it.product.name if it.product else f"Product #{it.product_id}",
                 "quantity": it.quantity,
                 "unit_price": it.unit_price,
                 "subtotal": round(it.quantity * it.unit_price, 2)
@@ -142,21 +163,32 @@ def list_shopkeeper_orders(
             for it in o.items
         ]
 
+        total_qty = sum(it["quantity"] for it in items)
+        time_str = o.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
         results.append({
             "id": o.id,
+            "orderId": o.id,
+            "shopId": o.shop_id,
+            "shop_id": o.shop_id,
             "order_number": o.order_number,
             "order_type": o.order_type,
             "collect_option": o.collect_option,
             "status": o.status,
+            "shopper_name": shopper.name if shopper else "Shopper",
+            "shopper_phone": shopper.phone if shopper else "",
+            "items": items,
+            "quantity": total_qty,
+            "total": o.total_amount,
             "total_amount": o.total_amount,
-            "created_at": o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "time": time_str,
+            "created_at": time_str,
             "shopper": {
-                "id": shopper.id,
-                "name": shopper.name,
-                "phone": shopper.phone,
-                "address": shopper.address
-            },
-            "items": items
+                "id": shopper.id if shopper else None,
+                "name": shopper.name if shopper else "Shopper",
+                "phone": shopper.phone if shopper else "",
+                "address": shopper.address if shopper else ""
+            }
         })
 
     return {"success": True, "count": len(results), "orders": results}
@@ -170,10 +202,11 @@ def update_order_status(
 ):
     """
     Shopkeeper updates order status:
-    accepted -> ready -> picked_up / out_for_delivery -> completed.
-    When completed, awards loyalty points to the shopper!
+    Pending -> Accepted -> Preparing -> Ready -> Delivered / Rejected.
+    Awards loyalty points when delivered / completed.
     """
-    if payload.status not in VALID_STATUSES:
+    new_status = payload.status.strip().lower()
+    if new_status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status '{payload.status}'. Must be one of {VALID_STATUSES}"
@@ -187,11 +220,11 @@ def update_order_status(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found.")
 
-    old_status = order.status
-    order.status = payload.status
+    old_status = order.status.lower()
+    order.status = new_status
 
-    # If transitioning to accepted, deduct stock from batches using FEFO
-    if old_status == "pending" and payload.status == "accepted":
+    # If transitioning from pending to accepted/preparing/ready/delivered, deduct stock using FEFO
+    if old_status == "pending" and new_status in ["accepted", "preparing", "ready", "delivered", "completed"]:
         for it in order.items:
             batches = db.query(Batch).filter(
                 Batch.product_id == it.product_id,
@@ -206,8 +239,15 @@ def update_order_status(
                 b.quantity -= ded
                 rem -= ded
 
-    # If completed, award loyalty points (1 point per 50 spent)
-    if payload.status == "completed" and old_status != "completed":
+    # If rejected after having been accepted/preparing/ready, restore stock
+    if new_status == "rejected" and old_status in ["accepted", "preparing", "ready"]:
+        for it in order.items:
+            batch = db.query(Batch).filter(Batch.product_id == it.product_id).first()
+            if batch:
+                batch.quantity += it.quantity
+
+    # If delivered or completed, award loyalty points (1 point per 50 spent)
+    if new_status in ["delivered", "completed"] and old_status not in ["delivered", "completed"]:
         pts = max(int(order.total_amount // 50), 1)
         lp = LoyaltyPoint(
             shopper_id=order.shopper_id,
@@ -222,8 +262,10 @@ def update_order_status(
 
     return {
         "success": True,
-        "message": f"Order #{order.order_number} status updated from '{old_status}' to '{payload.status}'.",
-        "new_status": order.status
+        "message": f"Order #{order.order_number} status updated to '{order.status.capitalize()}'.",
+        "new_status": order.status,
+        "orderId": order.id,
+        "status": order.status
     }
 
 # -------------------------------------------------------------------------
@@ -242,7 +284,7 @@ def list_shopper_orders(
     for o in orders:
         items = [
             {
-                "product_name": it.product.name,
+                "product_name": it.product.name if it.product else f"Product #{it.product_id}",
                 "quantity": it.quantity,
                 "unit_price": it.unit_price,
                 "subtotal": round(it.quantity * it.unit_price, 2)
@@ -250,16 +292,25 @@ def list_shopper_orders(
             for it in o.items
         ]
 
+        total_qty = sum(it["quantity"] for it in items)
+        time_str = o.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
         results.append({
             "id": o.id,
+            "orderId": o.id,
+            "shopId": o.shop_id,
+            "shop_id": o.shop_id,
             "order_number": o.order_number,
-            "shop_name": o.shop.name,
-            "shop_phone": o.shop.phone,
+            "shop_name": o.shop.name if o.shop else "Shop",
+            "shop_phone": o.shop.phone if o.shop else "",
             "order_type": o.order_type,
             "collect_option": o.collect_option,
             "status": o.status,
             "total_amount": o.total_amount,
-            "created_at": o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "total": o.total_amount,
+            "quantity": total_qty,
+            "time": time_str,
+            "created_at": time_str,
             "items": items
         })
 
