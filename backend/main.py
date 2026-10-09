@@ -17,8 +17,14 @@ from backend.routes.shopper import router as shopper_router
 from backend.routes.delivery import router as delivery_router
 from backend.routes.loyalty_offers import router as loyalty_offers_router
 
+from backend.database import engine, Base, ensure_schema_migrations
+
 # Ensure all database tables exist
 Base.metadata.create_all(bind=engine)
+try:
+    ensure_schema_migrations(engine)
+except Exception:
+    pass
 
 # Auto-seed if hosted database is freshly provisioned
 try:
@@ -60,6 +66,8 @@ if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
     app.mount("/css", StaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
     app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
+    if (FRONTEND_DIR / "images").exists():
+        app.mount("/images", StaticFiles(directory=str(FRONTEND_DIR / "images")), name="images")
 
 @app.get("/api/health")
 def health_check():

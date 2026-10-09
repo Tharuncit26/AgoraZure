@@ -3,367 +3,552 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgoraZure - Shopper Portal & Live Stock Discovery</title>
+  <title>AgoraZure - Quick & Smart Local Commerce</title>
+  <meta name="description" content="Discover live local grocery inventory, seasonal discounts, and fast neighborhood delivery with AgoraZure.">
+  <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 
   <!-- App Header -->
   <header class="app-header">
     <div class="header-container">
-      <div class="logo-area">
-        <div class="logo-icon" style="background: linear-gradient(135deg, #10b981, #059669);">🛍️</div>
-        <span>AgoraZure <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); padding: 0.2rem 0.5rem; background: #f1f5f9; border-radius: 6px;">SHOPPER</span></span>
+      
+      <!-- Logo -->
+      <div class="logo-area" onclick="location.href='/'">
+        <img src="/images/logo.png" alt="AgoraZure Logo" class="logo-img">
+        <div class="logo-text">
+          AgoraZure
+          <span class="portal-tag shopper">Shopper</span>
+        </div>
       </div>
 
-      <div class="header-actions" id="shopperAuthBar" style="display: none;">
-        <!-- Shopper Profile Info -->
-        <div style="text-align: right; margin-right: 0.35rem;">
-          <div id="shopperNameDisplay" style="font-weight: 700; font-size: 0.88rem; line-height: 1.2;">Aarav Sharma</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted);">📍 <span id="shopperLocationDisplay">Indiranagar, BLR</span></div>
+      <!-- Location Chip -->
+      <div class="location-chip" id="locationSelectorBtn" onclick="openProfileModal(true)" title="Click to view/change delivery location">
+        <span class="loc-icon">📍</span>
+        <div style="overflow: hidden;">
+          <div class="loc-label">DELIVERING TO</div>
+          <div class="loc-text" id="shopperLocationDisplay">Indiranagar, Bengaluru</div>
         </div>
+        <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.2rem;">▾</span>
+      </div>
 
+      <!-- Header Actions -->
+      <div class="header-actions" id="shopperAuthBar">
         <!-- Loyalty Points Badge -->
-        <div style="background: #fef3c7; color: #92400e; padding: 0.3rem 0.65rem; border-radius: var(--radius-full); font-size: 0.82rem; font-weight: 700; display: flex; align-items: center; gap: 0.3rem;">
+        <div class="btn btn-secondary btn-sm" onclick="showModal('loyaltyModal')" title="Agora Loyalty Rewards" style="background: #fffbeb; border-color: #fde68a; color: #b45309; font-weight: 700;">
           ⭐ <span id="shopperPointsBalance">0</span> pts
         </div>
 
+        <!-- My Orders -->
+        <button class="btn btn-secondary btn-sm" onclick="showModal('orderHistoryModal')" title="Past Orders & Live Tracking">
+          📜 Orders <span class="badge badge-pending" id="activeOrdersBadge" style="display: none; padding: 0.1rem 0.4rem; font-size: 0.68rem;">1</span>
+        </button>
+
         <!-- Notifications Bell -->
-        <button class="btn btn-secondary btn-sm" onclick="showModal('notificationsModal')" style="position: relative; padding: 0.4rem 0.6rem;">
-          🔔 <span class="badge badge-danger" id="notifBadge" style="position: absolute; top: -6px; right: -6px; font-size: 0.65rem; padding: 0.15rem 0.4rem;">0</span>
+        <button class="btn btn-secondary btn-sm" onclick="showModal('notificationsModal')" style="position: relative;" title="In-App Notifications">
+          🔔 <span class="badge badge-danger" id="notifBadge" style="display: none; position: absolute; top: -6px; right: -6px; font-size: 0.65rem; padding: 0.1rem 0.35rem;">0</span>
         </button>
 
         <!-- Cart Button -->
-        <button class="btn btn-primary btn-sm" onclick="openCartModal()">
-          🛒 Cart (<span id="cartCountBadge">0</span>)
+        <button class="btn btn-primary btn-sm" onclick="openCartDrawer()" id="btnOpenCart" style="font-weight: 700;">
+          🛒 <span id="cartCountBadge">0</span> | <span id="cartHeaderTotal">₹0.00</span>
         </button>
 
-        <!-- User Logout -->
-        <button class="btn btn-secondary btn-sm" onclick="shopperLogout()" title="Logout">
-          👤
+        <!-- Profile / Account Button -->
+        <button class="btn btn-secondary btn-sm" onclick="openProfileModal()" id="btnProfile" title="My Profile">
+          👤 <span id="shopperNameDisplay" style="max-width: 90px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle;">Sign In</span>
+        </button>
+
+        <!-- Logout Button -->
+        <button class="btn btn-secondary btn-sm" onclick="shopperLogout()" id="btnLogout" title="Logout" style="display: none;">
+          🚪
         </button>
       </div>
+
     </div>
   </header>
 
-  <!-- Main Shopper Content -->
+  <!-- Main Content -->
   <main class="main-content">
 
-    <!-- Search Bar with Live Location Context -->
-    <div class="card" style="margin-bottom: 1.25rem; background: linear-gradient(135deg, #ffffff, #f0fdf4); border: 2px solid #bbf7d0;">
-      <div style="margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-        <h2 style="font-size: 1.25rem;">Live Stock in Nearby Local Shops</h2>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time inventory • Haversine proximity</span>
-      </div>
-
-      <div class="scanner-input-container" style="margin-bottom: 0;">
-        <span class="scanner-icon">🔍</span>
+    <!-- Search Hero Section -->
+    <div class="search-hero">
+      <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
         <input 
           type="text" 
           id="shopperSearchInput" 
-          class="scanner-input" 
-          style="border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);"
-          placeholder="Search items (e.g. Milk, Bread, Atta, Oil, Eggs)..."
+          class="search-input" 
+          placeholder="Search for milk, fresh bread, farm eggs, basmati rice, curd, snacks..."
+          autocomplete="off"
         >
+        <button class="search-clear-btn" id="searchClearBtn" style="display: none;" onclick="clearSearch()">✕</button>
+        <button class="btn btn-primary btn-sm" onclick="triggerSearchNow()" style="padding: 0.5rem 1rem;">Search</button>
       </div>
 
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem; flex-wrap: wrap; gap: 0.5rem; font-size: 0.85rem;">
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <label for="shopperShopFilter" style="font-weight: 600; color: var(--text-muted);">Filter by Shop:</label>
-          <select id="shopperShopFilter" class="form-control" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.82rem; height: auto;">
-            <option value="">All Nearby Shops</option>
-            <option value="1">Gupta Supermart (Shop 1 - Indiranagar)</option>
-            <option value="2">Fresh Daily Grocery (Shop 2 - Indiranagar)</option>
-            <option value="3">Metro Provision Store (Shop 3 - Indiranagar)</option>
-            <option value="4">Green Field Organics (Shop 4 - Whitefield)</option>
-          </select>
-        </div>
-        <div id="loggedInShopBadge" style="display: none;">
-          <button class="btn btn-secondary btn-sm" onclick="filterByLoggedInShop()" style="font-size: 0.8rem; padding: 0.3rem 0.65rem; border: 1px solid #10b981; color: #065f46; background: #ecfdf5;">
-            🏪 Logged-in Shop: <strong id="loggedInShopName"></strong> (Click to Filter)
-          </button>
+      <!-- Autocomplete Dropdown -->
+      <div class="search-dropdown" id="searchDropdown">
+        <div id="dropdownSuggestionsContainer">
+          <!-- Populated via JS -->
         </div>
       </div>
     </div>
 
-    <!-- Smart Substitutes Banner (Unmet Demand Trigger) -->
-    <div id="substitutesContainer" style="display: none; margin-bottom: 1.5rem; background: #f0f9ff; border: 2px solid #38bdf8; border-radius: var(--radius-md); padding: 1.25rem;">
-      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-        <span style="font-size: 1.3rem;">🤖</span>
+    <!-- Active Offers Carousel -->
+    <section class="banner-carousel-container" id="bannerCarouselSection" style="display: none;">
+      <div class="banner-track" id="bannerTrack">
+        <!-- Rendered via JS -->
+      </div>
+      <div class="carousel-dots" id="carouselDots">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- Category Filter Rail -->
+    <nav class="category-rail" id="categoryRail">
+      <button class="category-pill active" onclick="selectCategory('All', this)">🛍️ All Items</button>
+      <button class="category-pill" onclick="selectCategory('Dairy & Breakfast', this)">🥛 Dairy & Breakfast</button>
+      <button class="category-pill" onclick="selectCategory('Bakery', this)">🍞 Bakery & Breads</button>
+      <button class="category-pill" onclick="selectCategory('Eggs & Meat', this)">🥚 Eggs & Meat</button>
+      <button class="category-pill" onclick="selectCategory('Staples & Grains', this)">🌾 Staples & Atta</button>
+      <button class="category-pill" onclick="selectCategory('Snacks & Biscuits', this)">🍿 Snacks & Biscuits</button>
+      <button class="category-pill" onclick="selectCategory('Beverages', this)">☕ Tea & Beverages</button>
+      <button class="category-pill" onclick="selectCategory('Fruits & Vegetables', this)">🥦 Fresh Produce</button>
+    </nav>
+
+    <!-- Store Selector & Filter Bar -->
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; background: #ffffff; padding: 0.75rem 1.15rem; border-radius: var(--radius-lg); border: 1px solid var(--border);">
+      <div style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem;">
+        <span style="font-weight: 700; color: var(--text-muted);">Filter Store:</span>
+        <select id="shopperShopFilter" class="form-control" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.84rem;" onchange="handleShopFilterChange()">
+          <option value="">All Nearby Neighborhood Shops</option>
+          <!-- Dynamically populated from database -->
+        </select>
+      </div>
+
+      <div style="font-size: 0.82rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem;">
+        <span id="liveItemsCount">Live inventory available</span>
+        <span style="color: var(--success); font-weight: 700;">● Real-time stock</span>
+      </div>
+    </div>
+
+    <!-- Smart AI Substitutes Banner (Triggers if item is out of stock) -->
+    <div id="substitutesContainer" style="display: none; margin-bottom: 1.5rem; background: #f0f9ff; border: 2px solid #38bdf8; border-radius: var(--radius-lg); padding: 1.25rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
+        <span style="font-size: 1.35rem;">🤖</span>
         <h3 style="color: #0369a1; font-size: 1.1rem; margin: 0;">
           Smart AI Substitutes for "<span id="missingItemTitle"></span>"
         </h3>
       </div>
-      <p style="font-size: 0.82rem; color: #475569; margin-bottom: 0.75rem;">
-        This item is currently out of stock nearby. Our AI recommends these available alternatives from partner neighborhood shops:
+      <p style="font-size: 0.84rem; color: #475569; margin-bottom: 0.85rem;">
+        This item is currently out of stock nearby. Our AI recommends these available alternatives from verified neighborhood stores:
       </p>
-      <div id="substitutesList">
+      <div id="substitutesList" class="grid grid-cols-3">
         <!-- Rendered via JS -->
       </div>
     </div>
 
-    <!-- "Use Soon" Deals Section -->
-    <section style="margin-bottom: 1.75rem;">
-      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.75rem;">
+    <!-- "Use Soon" Deals Rail (Near-Expiry Zero Food Waste) -->
+    <section id="useSoonSection" style="margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.85rem;">
         <div>
-          <h2 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.4rem;">
+          <h2 style="font-size: 1.25rem; display: flex; align-items: center; gap: 0.4rem;">
             <span>⚡</span> "Use Soon" Deals
+            <span class="badge" style="background: #fef3c7; color: #b45309; font-size: 0.7rem;">Save Food Waste</span>
           </h2>
-          <p style="font-size: 0.8rem; color: var(--text-muted);">
-            Save up to 30% on near-expiry grocery staples and help eliminate local food waste!
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.15rem;">
+            Fresh staples at up to 30% discount near their best-before dates.
           </p>
         </div>
       </div>
 
-      <div class="grid grid-cols-3" id="useSoonDealsContainer">
+      <div class="grid grid-cols-4" id="useSoonDealsContainer">
         <!-- Populated via JS -->
       </div>
     </section>
 
-    <!-- Product Search Results Grid -->
+    <!-- Main Products Grid -->
     <section>
-      <div style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="font-size: 1.2rem;">Nearby Products & Live Availability</h2>
-        <button class="btn btn-secondary btn-sm" onclick="showModal('orderHistoryModal')">📜 My Orders</button>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+        <h2 style="font-size: 1.25rem;" id="catalogSectionTitle">Nearby Products & Essentials</h2>
+        <span style="font-size: 0.82rem; color: var(--text-muted);" id="catalogResultsCount"></span>
       </div>
 
-      <div class="grid grid-cols-3" id="searchResultsContainer">
+      <div class="grid grid-cols-4" id="searchResultsContainer">
         <!-- Populated via JS -->
       </div>
     </section>
 
   </main>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: CART & CHECKOUT (COLLECT OPTIONS & PRE-BOOK) -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="cartModal">
-    <div class="modal-content">
-      <div class="modal-header">
+  <!-- =========================================================================
+       SLIDING CART DRAWER (Off-Canvas)
+       ========================================================================= -->
+  <div class="cart-drawer-overlay" id="cartDrawerOverlay" onclick="closeCartDrawer()"></div>
+
+  <div class="cart-drawer" id="cartDrawer">
+    <div class="cart-drawer-header">
+      <div>
+        <h3 style="font-size: 1.2rem;">🛒 Your Cart</h3>
+        <span style="font-size: 0.78rem; color: var(--text-muted);" id="cartDrawerSubhead">Review your selected items</span>
+      </div>
+      <button class="modal-close" onclick="closeCartDrawer()">&times;</button>
+    </div>
+
+    <div class="cart-drawer-body">
+      <!-- Store Banner -->
+      <div class="cart-shop-banner" id="cartShopBanner" style="display: none;">
         <div>
-          <h3>🛒 Review Order</h3>
-          <div id="cartShopName" style="font-size: 0.82rem; color: var(--primary); font-weight: 600;"></div>
+          <div style="font-weight: 700; font-size: 0.88rem;" id="cartDrawerShopName">Gupta Supermart</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="cartDrawerShopAddress">Indiranagar</div>
         </div>
-        <button class="modal-close" onclick="hideModal('cartModal')">&times;</button>
+        <span class="badge badge-accepted" style="font-size: 0.7rem;">Verified Store</span>
       </div>
 
-      <!-- Items List -->
-      <div id="cartItemsContainer" style="margin-bottom: 1rem; max-height: 240px; overflow-y: auto;">
+      <!-- Cart Items List -->
+      <div id="cartItemsContainer">
         <!-- Rendered via JS -->
       </div>
 
-      <div class="receipt-divider"></div>
-
-      <!-- Order Type -->
-      <div style="margin-bottom: 1rem;">
-        <label class="form-label">Order Type</label>
-        <div style="display: flex; gap: 0.5rem;">
-          <label style="flex: 1; border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 0.6rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;">
-            <input type="radio" name="order_type" value="buy_from_home" checked>
-            <strong>Buy from Home</strong>
-          </label>
-          <label style="flex: 1; border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 0.6rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;">
-            <input type="radio" name="order_type" value="prebook">
-            <strong>Pre-Book (Hold)</strong>
-          </label>
-        </div>
-      </div>
-
-      <!-- Collect Options -->
-      <div style="margin-bottom: 1.25rem;">
-        <label class="form-label">Fulfillment / Collect Option</label>
-        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-          <label style="border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 0.6rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;">
-            <input type="radio" name="collect_option" id="optPickup" value="pickup" checked>
-            <div>
-              <strong>🏬 Queue-Free Store Pickup</strong>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">Ready in 15 mins. Collect at express counter.</div>
+      <!-- Fulfillment Option -->
+      <div id="cartFulfillmentSection" style="margin-top: 1.25rem; display: none;">
+        <label class="form-label">Delivery or Counter Pickup</label>
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 0.75rem;">
+          <label style="flex: 1; display: flex; align-items: center; gap: 0.5rem; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; background: #ffffff;">
+            <input type="radio" name="collect_option" id="optHomeDelivery" value="home_delivery" checked onchange="updateCartBillSummary()">
+            <div style="font-size: 0.85rem;">
+              <div style="font-weight: 700;">🛵 Home Delivery</div>
+              <div style="font-size: 0.72rem; color: var(--text-muted);">₹25 cluster fee</div>
             </div>
           </label>
-          <label style="border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 0.6rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;">
-            <input type="radio" name="collect_option" id="optHomeDelivery" value="home_delivery">
-            <div>
-              <strong>🛵 Home Delivery (Shared Rider)</strong>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">Dispatched via the 1 km cluster delivery rider.</div>
+
+          <label style="flex: 1; display: flex; align-items: center; gap: 0.5rem; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; background: #ffffff;">
+            <input type="radio" name="collect_option" id="optPickup" value="pickup" onchange="updateCartBillSummary()">
+            <div style="font-size: 0.85rem;">
+              <div style="font-weight: 700;">🏬 Store Pickup</div>
+              <div style="font-size: 0.72rem; color: var(--success); font-weight: 600;">FREE (₹0 fee)</div>
             </div>
           </label>
         </div>
-        <div id="deliveryClusterWarning" style="display: none; font-size: 0.78rem; color: #dc2626; margin-top: 0.4rem;">
-          ⚠️ Home delivery is unavailable for this shop because it is outside the shared delivery cluster. Only pickup available.
+
+        <div id="deliveryClusterWarning" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; font-size: 0.78rem; color: #92400e; margin-bottom: 0.75rem;">
+          ⚠️ This store currently only supports counter pickup.
+        </div>
+
+        <!-- Delivery Address -->
+        <div class="form-group" id="deliveryAddressGroup">
+          <label class="form-label">Delivery Address</label>
+          <input type="text" id="cartDeliveryAddress" class="form-control" placeholder="House/Flat, Street, Area">
+        </div>
+
+        <!-- Payment Method -->
+        <div class="form-group">
+          <label class="form-label">Payment Method</label>
+          <select id="cartPaymentMethod" class="form-control">
+            <option value="Cash on Delivery">💵 Cash on Delivery</option>
+            <option value="UPI on Delivery">📱 UPI on Delivery (GPay / PhonePe)</option>
+          </select>
+        </div>
+
+        <!-- Bill Details Card -->
+        <div class="bill-details-card">
+          <div style="font-weight: 700; margin-bottom: 0.4rem;">Bill Summary</div>
+          <div class="bill-row">
+            <span>Item Total</span>
+            <span id="billItemTotal">₹0.00</span>
+          </div>
+          <div class="bill-row">
+            <span>Delivery Fee</span>
+            <span id="billDeliveryFee">₹25.00</span>
+          </div>
+          <div class="bill-row">
+            <span>GST & Store Taxes (5%)</span>
+            <span id="billTax">₹0.00</span>
+          </div>
+          <div class="bill-row bill-savings" id="billSavingsRow" style="display: none;">
+            <span>Total Savings</span>
+            <span id="billSavings">-₹0.00</span>
+          </div>
+          <div class="bill-row total">
+            <span>To Pay</span>
+            <span id="billGrandTotal">₹0.00</span>
+          </div>
         </div>
       </div>
+    </div>
 
-      <!-- Grand Total & Place Order Button -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <span style="font-size: 1rem; font-weight: 600;">Total Payable:</span>
-        <span id="cartTotalAmount" style="font-size: 1.5rem; font-weight: 800; color: var(--primary);">₹0.00</span>
+    <div class="cart-drawer-footer">
+      <div id="cartErrorBox" style="display: none; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 0.6rem; border-radius: var(--radius-sm); font-size: 0.82rem; margin-bottom: 0.65rem;">
+        <span id="cartErrorText">Failed to place order.</span>
+        <button class="btn btn-secondary btn-sm" onclick="handlePlaceOrder()" style="margin-left: 0.5rem; padding: 0.2rem 0.5rem;">Retry</button>
       </div>
 
-      <button id="btnPlaceOrder" class="btn btn-primary btn-block" onclick="handlePlaceOrder()" style="padding: 0.8rem; font-size: 1rem;">
-        Place Order & Generate Receipt
+      <button class="btn btn-primary btn-block btn-lg" id="btnCheckout" onclick="handlePlaceOrder()" disabled>
+        Proceed to Place Order
       </button>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: DIGITAL ORDER RECEIPT -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="orderReceiptModal">
-    <div class="modal-content" style="max-width: 440px;">
+  <!-- =========================================================================
+       MODAL: LIVE ORDER TRACKING (Swiggy / Zomato Timeline)
+       ========================================================================= -->
+  <div class="modal-overlay" id="orderTrackingModal">
+    <div class="modal-content" style="max-width: 620px;">
       <div class="modal-header">
-        <h3>🧾 Digital Order Receipt</h3>
-        <button class="modal-close" onclick="hideModal('orderReceiptModal')">&times;</button>
+        <div>
+          <h3 style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>📍</span> Live Order Tracking
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="trackOrderNumHeader">Order #AZ-...</span>
+        </div>
+        <button class="modal-close" onclick="closeOrderTrackingModal()">&times;</button>
       </div>
 
-      <div class="receipt-paper">
-        <div class="receipt-header">
-          <div class="receipt-logo" id="ordReceiptShop">AGORAZURE STORE</div>
-          <div style="font-size: 0.8rem; color: #64748b;">Order Confirmation & Pickup Slip</div>
-        </div>
-
-        <div class="receipt-row">
-          <span>Order No:</span>
-          <span id="ordReceiptNumber" style="font-weight: bold;">ORD-001</span>
-        </div>
-        <div class="receipt-row">
-          <span>Date/Time:</span>
-          <span id="ordReceiptDate">2026-10-08 14:00</span>
-        </div>
-        <div class="receipt-row">
-          <span>Fulfillment:</span>
-          <span id="ordReceiptType" style="font-weight: bold;">PREBOOK (PICKUP)</span>
-        </div>
-        <div class="receipt-row">
-          <span>Status:</span>
-          <span id="ordReceiptStatus" class="badge badge-success">READY</span>
-        </div>
-
-        <div class="receipt-divider"></div>
-
-        <div id="ordReceiptItems">
-          <!-- Populated via JS -->
-        </div>
-
-        <div class="receipt-divider"></div>
-
-        <div class="receipt-total">
-          <span>TOTAL:</span>
-          <span id="ordReceiptTotal">₹0.00</span>
-        </div>
-
-        <div style="text-align: center; margin-top: 1rem; font-size: 0.75rem; color: #64748b;">
-          * Show this digital receipt at store counter or to delivery rider *<br>
-          Earned Agora loyalty points added to your balance!
-        </div>
-      </div>
-
-      <div style="margin-top: 1rem;">
-        <button class="btn btn-primary btn-block" onclick="hideModal('orderReceiptModal')">Done</button>
+      <div id="trackingModalBody">
+        <!-- Dynamic Timeline Rendered via JS -->
       </div>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: NOTIFICATIONS (NOTIFY-BACK) -->
-  <!-- ================================================================= -->
+  <!-- =========================================================================
+       MODAL: ORDER HISTORY & PAST RECEIPTS
+       ========================================================================= -->
+  <div class="modal-overlay" id="orderHistoryModal">
+    <div class="modal-content" style="max-width: 680px;">
+      <div class="modal-header">
+        <h3>📜 My Orders & History</h3>
+        <button class="modal-close" onclick="hideModal('orderHistoryModal')">&times;</button>
+      </div>
+      <div id="shopperOrderHistoryContainer">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: DIGITAL RECEIPT
+       ========================================================================= -->
+  <div class="modal-overlay" id="orderReceiptModal">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>🧾 Order Confirmation & Receipt</h3>
+        <button class="modal-close" onclick="hideModal('orderReceiptModal')">&times;</button>
+      </div>
+      <div id="receiptContent">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: SHOPPER PROFILE & ADDRESS MANAGEMENT
+       ========================================================================= -->
+  <div class="modal-overlay" id="shopperProfileModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="profileModalTitle">👤 My Profile & Delivery Address</h3>
+        <button class="modal-close" onclick="hideModal('shopperProfileModal')">&times;</button>
+      </div>
+
+      <form id="shopperProfileForm" onsubmit="handleSaveShopperProfile(event)">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="name" id="profNameInput" class="form-control" placeholder="Your name" required>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Mobile Number</label>
+            <input type="tel" name="phone" id="profPhoneInput" class="form-control" placeholder="10-digit phone" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input type="email" name="email" id="profEmailInput" class="form-control" placeholder="your@email.com">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Default Delivery Address</label>
+          <input type="text" name="address" id="profAddressInput" class="form-control" placeholder="Apartment / Flat, Street, Locality" required>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Latitude</label>
+            <input type="number" step="any" name="latitude" id="profLatInput" class="form-control" value="12.9716" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Longitude</label>
+            <input type="number" step="any" name="longitude" id="profLonInput" class="form-control" value="77.5946" required>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">Save Profile Changes</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: SHOPPER AUTHENTICATION (SIGN IN & REGISTER)
+       ========================================================================= -->
+  <div class="modal-overlay" id="shopperAuthModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <img src="/images/logo.png" alt="Logo" style="height: 32px;">
+          <h3 style="font-size: 1.25rem;">Shopper Account</h3>
+        </div>
+        <button class="modal-close" onclick="hideModal('shopperAuthModal')">&times;</button>
+      </div>
+
+      <!-- Auth Tabs: Login vs Register -->
+      <div style="display: flex; border-bottom: 2px solid var(--border); margin-bottom: 1.25rem;">
+        <button type="button" class="btn btn-secondary" id="tabAuthLogin" onclick="switchAuthTab('login')" style="flex: 1; border: none; border-bottom: 2px solid var(--primary); border-radius: 0; font-weight: 700; color: var(--primary);">
+          Sign In
+        </button>
+        <button type="button" class="btn btn-secondary" id="tabAuthRegister" onclick="switchAuthTab('register')" style="flex: 1; border: none; border-bottom: 2px solid transparent; border-radius: 0; font-weight: 600; color: var(--text-muted);">
+          Create Account
+        </button>
+      </div>
+
+      <!-- 1. LOGIN FORM -->
+      <div id="authLoginFormContainer">
+        <form id="shopperLoginForm" onsubmit="handleShopperLogin(event)">
+          <div class="form-group">
+            <label class="form-label">Phone Number or Email</label>
+            <input type="text" name="identifier" class="form-control" placeholder="10-digit mobile or email" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input type="password" name="password" class="form-control" placeholder="Your password" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 0.5rem;">
+            Sign In to AgoraZure
+          </button>
+        </form>
+
+        <div style="text-align: center; margin: 1.25rem 0 0.85rem 0; font-size: 0.78rem; color: var(--text-muted);">
+          ── OR QUICK 1-CLICK TEST LOGIN ──
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="quickShopperLogin('9876500001', 'password123')">
+            👤 <strong>Aarav Sharma</strong> (Indiranagar - 0.2 km from Gupta Supermart)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="quickShopperLogin('9876500002', 'password123')">
+            👤 <strong>Priya Patel</strong> (Indiranagar - Defense Colony)
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. REGISTER FORM -->
+      <div id="authRegisterFormContainer" style="display: none;">
+        <form id="shopperRegisterForm" onsubmit="handleRegisterShopper(event)">
+          <div class="form-group">
+            <label class="form-label">Full Name</label>
+            <input type="text" name="name" class="form-control" placeholder="e.g. Maya Nair" required>
+          </div>
+          <div class="grid grid-cols-2">
+            <div class="form-group">
+              <label class="form-label">Mobile Number</label>
+              <input type="tel" name="phone" class="form-control" placeholder="10-digit mobile" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Address</label>
+              <input type="email" name="email" class="form-control" placeholder="e.g. maya@gmail.com" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Delivery Address</label>
+            <input type="text" name="address" class="form-control" placeholder="Apartment / Flat, Street, Area" required>
+          </div>
+          <div class="grid grid-cols-2">
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <input type="password" name="password" class="form-control" placeholder="Min 4 characters" minlength="4" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Confirm Password</label>
+              <input type="password" name="confirm_password" class="form-control" placeholder="Re-type password" minlength="4" required>
+            </div>
+          </div>
+          <input type="hidden" name="latitude" value="12.9716">
+          <input type="hidden" name="longitude" value="77.5946">
+          <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 0.5rem;">
+            Create Shopper Account
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: NOTIFICATIONS
+       ========================================================================= -->
   <div class="modal-overlay" id="notificationsModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>🔔 In-App Notifications</h3>
+        <h3>🔔 Notifications & Alerts</h3>
         <button class="modal-close" onclick="hideModal('notificationsModal')">&times;</button>
       </div>
-      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-        Unmet-demand notify-backs: alerts when previously out-of-stock items arrive in nearby stores.
-      </p>
       <div id="notificationsList" style="max-height: 380px; overflow-y: auto;">
         <!-- Rendered via JS -->
       </div>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: ORDER HISTORY & LOYALTY -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="orderHistoryModal">
+  <!-- =========================================================================
+       MODAL: LOYALTY REWARDS
+       ========================================================================= -->
+  <div class="modal-overlay" id="loyaltyModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>📜 Order History & Rewards</h3>
-        <button class="modal-close" onclick="hideModal('orderHistoryModal')">&times;</button>
+        <h3>⭐ Agora Loyalty Rewards</h3>
+        <button class="modal-close" onclick="hideModal('loyaltyModal')">&times;</button>
       </div>
-      <div id="shopperOrderHistoryContainer" style="max-height: 420px; overflow-y: auto;">
-        <!-- Rendered via JS -->
+      <div style="text-align: center; padding: 1.5rem 0;">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎉</div>
+        <div style="font-size: 2.2rem; font-weight: 800; color: var(--primary);" id="loyaltyBalanceLarge">0</div>
+        <div style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;">Agora Points Balance</div>
+        <p style="font-size: 0.85rem; color: var(--text-body); margin-top: 0.85rem; max-width: 380px; margin-left: auto; margin-right: auto;">
+          Earn 1 reward point for every ₹50 spent at verified neighborhood stores. Redeem points at counter checkout for instant cash savings!
+        </p>
       </div>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: SHOPPER AUTHENTICATION / DEMO LOGIN -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="shopperAuthModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>🛍️ Shopper Login</h3>
-      </div>
-
-      <div style="margin-bottom: 1.25rem;">
-        <label class="form-label">🚀 1-Click Demo Login (Judge / Tester)</label>
-        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
-          <button class="btn btn-secondary btn-sm" onclick="quickShopperLogin('9876500001', 'password123')">
-            Login as <strong>Aarav Sharma</strong> (Indiranagar - 0.2 km from Gupta Supermart)
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="quickShopperLogin('9876500002', 'password123')">
-            Login as <strong>Priya Patel</strong> (Indiranagar - Defense Colony)
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="quickShopperLogin('9876500003', 'password123')">
-            Login as <strong>Rohan Verma</strong> (Whitefield - Near Green Field Organics)
-          </button>
-        </div>
-      </div>
-
-      <div style="text-align: center; margin: 1rem 0; color: var(--text-muted); font-size: 0.85rem;">
-        ── OR REGISTER NEW SHOPPER ──
-      </div>
-
-      <form id="registerShopperForm">
-        <div class="form-group">
-          <label class="form-label">Your Name</label>
-          <input type="text" name="name" class="form-control" placeholder="e.g. Maya Nair" required>
-        </div>
-        <div class="grid grid-cols-2">
-          <div class="form-group">
-            <label class="form-label">Phone Number</label>
-            <input type="tel" name="phone" class="form-control" placeholder="10-digit mobile" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" required>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Address</label>
-          <input type="text" name="address" class="form-control" placeholder="Apartment, Street, Area" required>
-        </div>
-        <div class="grid grid-cols-2">
-          <div class="form-group">
-            <label class="form-label">Latitude</label>
-            <input type="number" step="any" name="latitude" class="form-control" value="12.9720" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Longitude</label>
-            <input type="number" step="any" name="longitude" class="form-control" value="77.6418" required>
-          </div>
-        </div>
-        <button type="submit" class="btn btn-primary btn-block">Create Shopper Account</button>
-      </form>
+  <!-- Mobile Bottom Navigation Bar -->
+  <nav class="mobile-bottom-nav">
+    <div class="mobile-nav-item active" onclick="window.scrollTo({top:0, behavior:'smooth'})">
+      <span class="mobile-nav-icon">🏠</span>
+      <span>Home</span>
     </div>
-  </div>
+    <div class="mobile-nav-item" onclick="document.getElementById('shopperSearchInput').focus()">
+      <span class="mobile-nav-icon">🔍</span>
+      <span>Search</span>
+    </div>
+    <div class="mobile-nav-item" onclick="showModal('orderHistoryModal')">
+      <span class="mobile-nav-icon">📜</span>
+      <span>Orders</span>
+    </div>
+    <div class="mobile-nav-item" onclick="openProfileModal()">
+      <span class="mobile-nav-icon">👤</span>
+      <span>Profile</span>
+    </div>
+    <div class="mobile-nav-item" onclick="openCartDrawer()">
+      <span class="mobile-nav-icon">🛒</span>
+      <span>Cart (<span id="mobileCartCount">0</span>)</span>
+    </div>
+  </nav>
 
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/static/js/shopper.js"></script>
+  <script src="/js/shopper.js"></script>
 </body>
 </html>

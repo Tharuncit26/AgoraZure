@@ -1,5 +1,6 @@
 /**
- * AgoraZure Shopkeeper Portal Logic
+ * AgoraZure - Shopkeeper Merchant Dashboard Logic
+ * Connected to Real Shared Backend (PostgreSQL / Supabase / SQLite)
  * Zéphyr 2026 AI Hackathon - PS-2: Smart Commerce
  */
 
@@ -16,87 +17,198 @@ function getApiBase() {
 }
 const API_BASE = getApiBase();
 
-// State
+// Application State
 let currentShop = null;
-let currentTab = "tab_1";
-let bills = {
-  tab_1: [],
-  tab_2: []
-};
+let currentShopkeeper = null;
 let shopCatalog = [];
+let activeOffers = [];
+let currentOrderFilter = "";
+let ordersPollInterval = null;
+let lastKnownOrdersCount = 0;
+let audioNotificationsEnabled = true;
 
-// Initialize
+// POS Billing Session State
+let billingSessions = {
+  tab_1: { items: [], total: 0 },
+  tab_2: { items: [], total: 0 }
+};
+let activeBillingTab = "tab_1";
+
+// =========================================================================
+// 1. INITIALIZATION & AUTHENTICATION
+// =========================================================================
+
 document.addEventListener("DOMContentLoaded", () => {
-  initAuth();
-  setupEventListeners();
+  initShopkeeperAuth();
 });
 
-// =========================================================================
-// 1. AUTHENTICATION & DEMO ACCOUNTS
-// =========================================================================
-
-function initAuth() {
+function initShopkeeperAuth() {
   const saved = localStorage.getItem("agorazure_shopkeeper");
   if (saved) {
     try {
-      currentShop = JSON.parse(saved);
-      renderShopHeader();
-      loadAllShopData();
+      const data = JSON.parse(saved);
+      currentShopkeeper = data;
+      currentShop = {
+        id: data.shop_id,
+        shop_id: data.shop_id,
+        name: data.shop_name,
+        owner_name: data.name,
+        phone: data.phone,
+        email: data.email,
+        address: data.address,
+        is_open: data.is_open !== undefined ? data.is_open : true
+      };
+      setupMerchantApp();
       return;
     } catch (e) {
       localStorage.removeItem("agorazure_shopkeeper");
     }
   }
-  showModal("authModal");
+  showModal("shopAuthModal");
 }
 
-function renderShopHeader() {
+function setupMerchantApp() {
+  renderShopkeeperHeader();
+  hideModal("shopAuthModal");
+  document.getElementById("shopkeeperDashboardSection").style.display = "flex";
+
+  // Load store data
+  loadShopDashboardMetrics();
+  loadShopkeeperOrders("");
+  loadShopStock();
+  loadOffers();
+  loadSharedDelivery();
+  loadDemandInsights();
+
+  // Polling every 4 seconds for new incoming orders
+  if (ordersPollInterval) clearInterval(ordersPollInterval);
+  ordersPollInterval = setInterval(() => {
+    if (currentShop) {
+      loadShopkeeperOrders(currentOrderFilter, true);
+    }
+  }, 4000);
+}
+
+function renderShopkeeperHeader() {
   if (!currentShop) return;
-  const nameEl = document.getElementById("shopNameDisplay");
-  if (nameEl) nameEl.textContent = currentShop.shop_name || "";
-  const ownerEl = document.getElementById("shopOwnerDisplay");
-  if (ownerEl) ownerEl.textContent = currentShop.name || "";
-  const addrEl = document.getElementById("shopAddressDisplay");
-  if (addrEl) addrEl.textContent = currentShop.address || "";
+
   const authBar = document.getElementById("shopAuthBar");
   if (authBar) authBar.style.display = "flex";
-  hideModal("authModal");
+
+  const nameEl = document.getElementById("shopNameDisplay");
+  if (nameEl) nameEl.textContent = currentShop.name || "My Store";
+
+  const ownerEl = document.getElementById("shopOwnerDisplay");
+  if (ownerEl) ownerEl.textContent = `${currentShop.owner_name} • ${currentShop.address.split(',')[0]}`;
+
+  updateOpenStatusBadge(currentShop.is_open);
 }
 
-async function quickLogin(phone, password) {
-  let res, data;
+function updateOpenStatusBadge(isOpen) {
+  const badge = document.getElementById("shopOpenStatusBadge");
+  if (badge) {
+    if (isOpen) {
+      badge.textContent = "OPEN";
+      badge.style.background = "#dcfce7";
+      badge.style.color = "#15803d";
+    } else {
+      badge.textContent = "CLOSED";
+      badge.style.background = "#fee2e2";
+      badge.style.color = "#b91c1c";
+    }
+  }
+}
+
+function switchShopAuthTab(tab) {
+  const loginForm = document.getElementById("shopLoginFormContainer");
+  const regForm = document.getElementById("shopRegisterFormContainer");
+  const tabLogin = document.getElementById("tabShopLogin");
+  const tabReg = document.getElementById("tabShopRegister");
+
+  if (tab === "register") {
+    loginForm.style.display = "none";
+    regForm.style.display = "block";
+    tabReg.style.color = "var(--primary)";
+    tabReg.style.borderBottomColor = "var(--primary)";
+    tabLogin.style.color = "var(--text-muted)";
+    tabLogin.style.borderBottomColor = "transparent";
+  } else {
+    loginForm.style.display = "block";
+    regForm.style.display = "none";
+    tabLogin.style.color = "var(--primary)";
+    tabLogin.style.borderBottomColor = "var(--primary)";
+    tabReg.style.color = "var(--text-muted)";
+    tabReg.style.borderBottomColor = "transparent";
+  }
+}
+
+async function handleShopkeeperLogin(e) {
+  e.preventDefault();
+  const form = e.target;
+  const identifier = form.identifier.value.trim();
+  const password = form.password.value.trim();
+
+  const payload = {
+    phone: identifier.includes("@") ? null : identifier,
+    email: identifier.includes("@") ? identifier : null,
+    password: password
+  };
+
   try {
-    res = await fetch(`${API_BASE}/auth/shopkeeper/login`, {
+    const res = await fetch(`${API_BASE}/auth/shopkeeper/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, password })
+      body: JSON.stringify(payload)
     });
-  } catch (netErr) {
-    console.error("Shopkeeper login network error:", netErr);
-    showToast("Network error: Unable to connect to server. Please check backend connection.", "danger");
-    return;
-  }
+    const data = await res.json();
 
-  try {
-    data = await res.json();
-  } catch (parseErr) {
-    console.error("Failed to parse login response:", parseErr);
-    showToast("Server error: Invalid response from server.", "danger");
-    return;
-  }
-
-  if (res.ok && data.success) {
-    try {
-      currentShop = data.shopkeeper;
-      localStorage.setItem("agorazure_shopkeeper", JSON.stringify(currentShop));
-      renderShopHeader();
-      loadAllShopData();
-      showToast(`Logged in as ${currentShop.shop_name}`, "success");
-    } catch (uiErr) {
-      console.error("Error setting up shop UI after login:", uiErr);
+    if (res.ok && data.success && data.shopkeeper) {
+      currentShopkeeper = data.shopkeeper;
+      localStorage.setItem("agorazure_shopkeeper", JSON.stringify(currentShopkeeper));
+      currentShop = {
+        id: currentShopkeeper.shop_id,
+        shop_id: currentShopkeeper.shop_id,
+        name: currentShopkeeper.shop_name,
+        owner_name: currentShopkeeper.name,
+        phone: currentShopkeeper.phone,
+        email: currentShopkeeper.email,
+        address: currentShopkeeper.address,
+        is_open: currentShopkeeper.is_open !== undefined ? currentShopkeeper.is_open : true
+      };
+      showToast(`Welcome back, ${currentShopkeeper.name}!`, "success");
+      setupMerchantApp();
+    } else {
+      showToast(data.detail || "Invalid login credentials.", "danger");
     }
+  } catch (err) {
+    showToast("Network error. Unable to connect to server.", "danger");
+  }
+}
+
+async function quickShopkeeperLogin(phone, password) {
+  const res = await fetch(`${API_BASE}/auth/shopkeeper/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, password })
+  });
+  const data = await res.json();
+  if (res.ok && data.success && data.shopkeeper) {
+    currentShopkeeper = data.shopkeeper;
+    localStorage.setItem("agorazure_shopkeeper", JSON.stringify(currentShopkeeper));
+    currentShop = {
+      id: currentShopkeeper.shop_id,
+      shop_id: currentShopkeeper.shop_id,
+      name: currentShopkeeper.shop_name,
+      owner_name: currentShopkeeper.name,
+      phone: currentShopkeeper.phone,
+      email: currentShopkeeper.email,
+      address: currentShopkeeper.address,
+      is_open: currentShopkeeper.is_open !== undefined ? currentShopkeeper.is_open : true
+    };
+    showToast(`Logged into ${currentShop.name}`, "success");
+    setupMerchantApp();
   } else {
-    showToast(data.detail || "Invalid phone or password. Login failed.", "danger");
+    showToast(data.detail || "Quick login failed.", "danger");
   }
 }
 
@@ -107,428 +219,489 @@ async function handleRegisterShop(e) {
     shop_name: form.shop_name.value.trim(),
     owner_name: form.owner_name.value.trim(),
     phone: form.phone.value.trim(),
-    password: form.password.value.trim(),
+    email: form.email.value.trim() || null,
+    password: form.password.value,
     address: form.address.value.trim(),
-    latitude: parseFloat(form.latitude.value),
-    longitude: parseFloat(form.longitude.value)
+    category: form.category.value,
+    opening_hours: form.opening_hours.value.trim(),
+    photo_url: form.photo_url.value.trim() || null,
+    latitude: 12.9716,
+    longitude: 77.6412
   };
 
-  let res, data;
   try {
-    res = await fetch(`${API_BASE}/auth/shopkeeper/register`, {
+    const res = await fetch(`${API_BASE}/auth/shopkeeper/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-  } catch (netErr) {
-    console.error("Shop registration network error:", netErr);
-    showToast("Network error: Unable to connect to server. Please try again.", "danger");
-    return;
-  }
+    const data = await res.json();
 
-  try {
-    data = await res.json();
-  } catch (parseErr) {
-    showToast("Server error: Invalid response from server.", "danger");
-    return;
-  }
-
-  if (res.ok && data.success) {
-    showToast("Shop registered successfully! Logging in...", "success");
-    await quickLogin(payload.phone, payload.password);
-  } else {
-    showToast(data.detail || "Registration failed", "danger");
+    if (res.ok && data.success) {
+      showToast(data.message || "Store registered successfully!", "success");
+      await quickShopkeeperLogin(payload.phone, payload.password);
+    } else {
+      showToast(data.detail || "Registration failed. Phone may already be registered.", "danger");
+    }
+  } catch (err) {
+    showToast("Network error registering store.", "danger");
   }
 }
 
-let ordersPollInterval = null;
-let currentOrderFilter = "";
-
-function logout() {
-  if (ordersPollInterval) clearInterval(ordersPollInterval);
+function shopkeeperLogout() {
   localStorage.removeItem("agorazure_shopkeeper");
   currentShop = null;
+  currentShopkeeper = null;
+  if (ordersPollInterval) clearInterval(ordersPollInterval);
+  showToast("You have been signed out.", "info");
   location.reload();
 }
 
-// =========================================================================
-// 2. DATA LOADING
-// =========================================================================
-
-function loadAllShopData() {
-  if (!currentShop || !currentShop.shop_id) return;
-  loadStock();
-  loadAlerts();
-  loadDemandInsights();
-  loadOrders();
-  loadSharedDelivery();
-  loadMarketing();
-  focusScanner();
-
-  if (ordersPollInterval) clearInterval(ordersPollInterval);
-  ordersPollInterval = setInterval(() => {
-    if (currentShop && currentShop.shop_id) {
-      loadOrders(currentOrderFilter, true);
-    }
-  }, 3000);
-}
-
-// Switch navigation tabs
-function switchNavTab(tabName) {
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.tab === tabName);
-  });
-  document.querySelectorAll(".tab-panel").forEach(panel => {
-    panel.classList.toggle("active", panel.id === `tab-${tabName}`);
-  });
-
-  if (tabName === "billing") {
-    focusScanner();
-  }
-}
-
-// =========================================================================
-// 3. SCAN AND BILL (POS ENGINE)
-// =========================================================================
-
-function switchBillingSession(tab) {
-  currentTab = tab;
-  document.getElementById("btnBillTab1").classList.toggle("active", tab === "tab_1");
-  document.getElementById("btnBillTab2").classList.toggle("active", tab === "tab_2");
-  renderBillingTable();
-  focusScanner();
-}
-
-function focusScanner() {
-  const input = document.getElementById("barcodeScannerInput");
-  if (input) {
-    input.focus();
-  }
-}
-
-async function handleBarcodeScan(barcode) {
-  if (!barcode || !currentShop) return;
-  const barcodeClean = barcode.trim();
-  if (!barcodeClean) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/billing/scan?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ barcode: barcodeClean, session_tab: currentTab })
-    });
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      const prod = data.product;
-      const currentItems = bills[currentTab];
-      const existing = currentItems.find(it => it.product_id === prod.id);
-
-      if (existing) {
-        if (existing.quantity + 1 > prod.available_stock) {
-          showToast(`Cannot add more. Only ${prod.available_stock} in stock!`, "warning");
-          return;
-        }
-        existing.quantity += 1;
-        showToast(`Increased quantity for ${prod.name} (${existing.quantity})`, "success");
-      } else {
-        if (prod.available_stock <= 0) {
-          showToast(`${prod.name} is Out of Stock!`, "danger");
-          return;
-        }
-        currentItems.push({
-          product_id: prod.id,
-          name: prod.name,
-          barcode: prod.barcode,
-          price: prod.price,
-          quantity: 1,
-          available_stock: prod.available_stock
-        });
-        showToast(`Added ${prod.name} to Bill`, "success");
-      }
-      renderBillingTable();
-    } else {
-      showToast(data.detail || "Barcode not found in catalog", "danger");
-    }
-  } catch (err) {
-    showToast("Error scanning item", "danger");
-  } finally {
-    const input = document.getElementById("barcodeScannerInput");
-    if (input) {
-      input.value = "";
-      input.focus();
-    }
-  }
-}
-
-function updateItemQuantity(prodId, delta) {
-  const currentItems = bills[currentTab];
-  const item = currentItems.find(it => it.product_id === prodId);
-  if (!item) return;
-
-  const newQty = item.quantity + delta;
-  if (newQty <= 0) {
-    removeItemFromBill(prodId);
-    return;
-  }
-  if (newQty > item.available_stock) {
-    showToast(`Only ${item.available_stock} units available in stock.`, "warning");
-    return;
-  }
-  item.quantity = newQty;
-  renderBillingTable();
-}
-
-function removeItemFromBill(prodId) {
-  bills[currentTab] = bills[currentTab].filter(it => it.product_id !== prodId);
-  renderBillingTable();
-}
-
-function clearCurrentBill() {
-  bills[currentTab] = [];
-  renderBillingTable();
-  focusScanner();
-}
-
-function renderBillingTable() {
-  const currentItems = bills[currentTab];
-  const tbody = document.getElementById("billingItemsTbody");
-  const countBadge = document.getElementById(`countBadge_${currentTab}`);
-  
-  if (countBadge) {
-    countBadge.textContent = currentItems.reduce((acc, it) => acc + it.quantity, 0);
-  }
-
-  if (currentItems.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="5" class="empty-state" style="padding: 2rem;">
-          <div class="empty-icon">🛒</div>
-          <p>Scan barcode with scanner or enter manually above to start billing</p>
-        </td>
-      </tr>
-    `;
-    updateBillTotals(0);
-    return;
-  }
-
-  let total = 0;
-  tbody.innerHTML = currentItems.map((it, idx) => {
-    const lineTotal = it.price * it.quantity;
-    total += lineTotal;
-    return `
-      <tr>
-        <td>
-          <div style="font-weight: 600;">${it.name}</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">${it.barcode}</div>
-        </td>
-        <td>₹${it.price.toFixed(2)}</td>
-        <td>
-          <div style="display: flex; align-items: center; gap: 0.4rem;">
-            <button class="btn btn-secondary btn-sm" onclick="updateItemQuantity(${it.product_id}, -1)">-</button>
-            <span style="font-weight: 700; min-width: 20px; text-align: center;">${it.quantity}</span>
-            <button class="btn btn-secondary btn-sm" onclick="updateItemQuantity(${it.product_id}, 1)">+</button>
-          </div>
-        </td>
-        <td style="font-weight: 700;">₹${lineTotal.toFixed(2)}</td>
-        <td>
-          <button class="btn btn-danger btn-sm" onclick="removeItemFromBill(${it.product_id})" title="Remove item">×</button>
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  updateBillTotals(total);
-}
-
-function updateBillTotals(total) {
-  const subtotalEl = document.getElementById("billSubtotal");
-  if (subtotalEl) subtotalEl.textContent = `₹${total.toFixed(2)}`;
-  const grandTotalEl = document.getElementById("billGrandTotal");
-  if (grandTotalEl) grandTotalEl.textContent = `₹${total.toFixed(2)}`;
-  const payBtns = document.querySelectorAll(".btn-pay-action");
-  payBtns.forEach(btn => btn.disabled = total <= 0);
-}
-
-// Payment: Cash
-async function handlePayCash() {
-  const currentItems = bills[currentTab];
-  if (currentItems.length === 0) return;
-
-  const payload = {
-    session_tab: currentTab,
-    payment_method: "cash",
-    items: currentItems.map(it => ({ product_id: it.product_id, quantity: it.quantity }))
-  };
-
-  try {
-    const res = await fetch(`${API_BASE}/billing/confirm?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      showToast("Cash Bill finalized! Stock deducted (FEFO).", "success");
-      clearCurrentBill();
-      loadStock();
-      loadAlerts();
-      showReceiptModal(data.receipt);
-    } else {
-      showToast(data.detail || "Payment failed", "danger");
-    }
-  } catch (err) {
-    showToast("Error completing bill", "danger");
-  }
-}
-
-// Payment: UPI QR Modal
-async function handleShowUpiQr() {
-  const currentItems = bills[currentTab];
-  if (currentItems.length === 0) return;
-  const total = currentItems.reduce((acc, it) => acc + (it.price * it.quantity), 0);
-
-  try {
-    const res = await fetch(`${API_BASE}/billing/upi-qr?amount=${total}&shop_id=${currentShop.shop_id}`);
-    const data = await res.json();
-    if (res.ok && data.success) {
-      document.getElementById("upiQrImage").src = data.qr_base64;
-      document.getElementById("upiQrAmount").textContent = `₹${data.amount.toFixed(2)}`;
-      document.getElementById("upiQrMerchant").textContent = data.merchant;
-      document.getElementById("upiQrId").textContent = data.upi_id;
-      showModal("upiQrModal");
-    } else {
-      showToast("Could not generate UPI QR", "danger");
-    }
-  } catch (err) {
-    showToast("Network error generating UPI QR", "danger");
-  }
-}
-
-// Shopkeeper confirms UPI Payment received
-async function handleConfirmUpiReceived() {
-  const currentItems = bills[currentTab];
-  if (currentItems.length === 0) return;
-
-  const payload = {
-    session_tab: currentTab,
-    payment_method: "upi",
-    items: currentItems.map(it => ({ product_id: it.product_id, quantity: it.quantity }))
-  };
-
-  try {
-    const res = await fetch(`${API_BASE}/billing/confirm?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      hideModal("upiQrModal");
-      showToast("UPI Payment confirmed! Stock reduced via FEFO.", "success");
-      clearCurrentBill();
-      loadStock();
-      loadAlerts();
-      showReceiptModal(data.receipt);
-    } else {
-      showToast(data.detail || "Error confirming payment", "danger");
-    }
-  } catch (err) {
-    showToast("Failed to finalize bill", "danger");
-  }
-}
-
-function showReceiptModal(receipt) {
-  document.getElementById("receiptShopName").textContent = receipt.shop.name;
-  document.getElementById("receiptShopAddress").textContent = receipt.shop.address;
-  document.getElementById("receiptShopPhone").textContent = `Ph: ${receipt.shop.phone}`;
-  document.getElementById("receiptNumber").textContent = receipt.bill_number;
-  document.getElementById("receiptDate").textContent = receipt.timestamp;
-  document.getElementById("receiptPayMethod").textContent = receipt.payment_method;
-
-  const tbody = document.getElementById("receiptItemsTbody");
-  tbody.innerHTML = receipt.items.map(it => `
-    <div class="receipt-row">
-      <div>
-        <strong>${it.product_name}</strong>
-        <div style="font-size: 0.72rem; color: #475569;">
-          ${it.quantity} x ₹${it.unit_price.toFixed(2)} ${it.batches_used ? `[${it.batches_used.join(', ')}]` : ''}
-        </div>
-      </div>
-      <div>₹${it.subtotal.toFixed(2)}</div>
-    </div>
-  `).join("");
-
-  document.getElementById("receiptTotal").textContent = `₹${receipt.total_amount.toFixed(2)}`;
-  showModal("receiptModal");
-}
-
-function printReceipt() {
-  window.print();
-}
-
-// =========================================================================
-// 4. STOCK & BATCH MANAGEMENT
-// =========================================================================
-
-async function loadStock() {
+async function toggleShopOpenState() {
   if (!currentShop) return;
+
+  const targetState = !currentShop.is_open;
   try {
-    const res = await fetch(`${API_BASE}/stock/products?shop_id=${currentShop.shop_id}`);
+    const res = await fetch(`${API_BASE}/auth/shopkeeper/toggle-open?shop_id=${currentShop.shop_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_open: targetState })
+    });
     const data = await res.json();
+
     if (res.ok && data.success) {
-      shopCatalog = data.products;
+      currentShop.is_open = targetState;
+      currentShopkeeper.is_open = targetState;
+      localStorage.setItem("agorazure_shopkeeper", JSON.stringify(currentShopkeeper));
+      updateOpenStatusBadge(targetState);
+      showToast(data.message || (targetState ? "Store is now OPEN" : "Store is now CLOSED"), targetState ? "success" : "warning");
+    }
+  } catch (err) {
+    showToast("Error updating store status", "danger");
+  }
+}
+
+// =========================================================================
+// 2. NAVIGATION & TABS
+// =========================================================================
+
+function switchShopTab(tabName, linkEl) {
+  document.querySelectorAll(".sidebar-link").forEach(el => el.classList.remove("active"));
+  if (linkEl) linkEl.classList.add("active");
+
+  const sections = ["dashboard", "orders", "inventory", "billing", "offers", "delivery"];
+  sections.forEach(s => {
+    const pane = document.getElementById(`pane-${s}`);
+    if (pane) pane.style.display = s === tabName ? "block" : "none";
+  });
+
+  if (tabName === "orders") loadShopkeeperOrders(currentOrderFilter);
+  if (tabName === "inventory") loadShopStock();
+  if (tabName === "billing") setupPosBilling();
+  if (tabName === "offers") loadOffers();
+  if (tabName === "delivery") loadSharedDelivery();
+  if (tabName === "dashboard") loadShopDashboardMetrics();
+}
+
+// =========================================================================
+// 3. LIVE ORDERS MANAGEMENT & BUG 5 FIX
+// =========================================================================
+
+async function loadShopkeeperOrders(filterStatus = "", isSilent = false) {
+  if (!currentShop) return;
+  currentOrderFilter = filterStatus;
+  const container = document.getElementById("ordersListContainer");
+  const url = filterStatus 
+    ? `${API_BASE}/orders/shopkeeper/list?shop_id=${currentShop.shop_id}&status_filter=${filterStatus}`
+    : `${API_BASE}/orders/shopkeeper/list?shop_id=${currentShop.shop_id}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      const orders = data.orders || [];
+      const counts = data.counts || {};
+
+      // Update counters
+      document.getElementById("countAll").textContent = counts.all || orders.length;
+      document.getElementById("countPending").textContent = counts.pending || 0;
+      document.getElementById("countAccepted").textContent = counts.accepted || 0;
+      document.getElementById("countPreparing").textContent = counts.preparing || 0;
+      document.getElementById("countReady").textContent = (counts.ready || 0) + (counts.out_for_delivery || 0);
+      document.getElementById("countDelivered").textContent = counts.delivered || 0;
+      document.getElementById("countRejected").textContent = counts.rejected || 0;
+
+      // KPI cards update
+      const kpiPending = document.getElementById("kpiPendingOrders");
+      if (kpiPending) kpiPending.textContent = counts.pending || 0;
+      const sidebarBadge = document.getElementById("sidebarOrderCount");
+      if (sidebarBadge) {
+        if ((counts.pending || 0) > 0) {
+          sidebarBadge.textContent = counts.pending;
+          sidebarBadge.style.display = "inline-block";
+        } else {
+          sidebarBadge.style.display = "none";
+        }
+      }
+
+      // Check for incoming new order alert
+      if (counts.pending > lastKnownOrdersCount && lastKnownOrdersCount !== 0) {
+        playOrderNotificationChime();
+        const alertBanner = document.getElementById("newOrderAlertBanner");
+        if (alertBanner) alertBanner.style.display = "block";
+        showToast(`🔔 New order received! Order action needed.`, "success");
+      }
+      lastKnownOrdersCount = counts.pending || 0;
+
+      // Render cards
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <div style="font-weight: 700;">No Orders in this category</div>
+            <p style="font-size: 0.85rem;">New orders from nearby shoppers will appear here in real time.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const statusBadgeStyles = {
+        pending: "badge-pending",
+        accepted: "badge-accepted",
+        preparing: "badge-preparing",
+        ready: "badge-ready",
+        out_for_delivery: "badge-out",
+        delivered: "badge-delivered",
+        rejected: "badge-danger",
+        cancelled: "badge-danger"
+      };
+
+      container.innerHTML = orders.map(o => {
+        const orderId = o.id || o.orderId;
+        const status = (o.status || "pending").toLowerCase();
+        const badgeClass = statusBadgeStyles[status] || "badge-secondary";
+        const items = o.items || [];
+        const quantity = items.reduce((s, it) => s + it.quantity, 0);
+
+        // Explicit Action Buttons: NO auto-rejection! ONLY manual clicks change status!
+        let actionButtonsHtml = '';
+        if (status === 'pending') {
+          actionButtonsHtml = `
+            <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'accepted')">
+              ✓ Accept Order
+            </button>
+            <button class="btn btn-outline-danger btn-sm" onclick="openRejectOrderModal(${orderId})">
+              ✕ Reject
+            </button>
+          `;
+        } else if (status === 'accepted') {
+          actionButtonsHtml = `
+            <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'preparing')">
+              🍳 Start Preparing
+            </button>
+            <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${orderId}, 'ready')">
+              Mark Ready
+            </button>
+            <button class="btn btn-outline-danger btn-sm" onclick="openRejectOrderModal(${orderId})">
+              Reject
+            </button>
+          `;
+        } else if (status === 'preparing') {
+          actionButtonsHtml = `
+            <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${orderId}, 'ready')">
+              ✓ Mark Ready for Pickup / Delivery
+            </button>
+            <button class="btn btn-outline-danger btn-sm" onclick="openRejectOrderModal(${orderId})">
+              Reject
+            </button>
+          `;
+        } else if (status === 'ready') {
+          if (o.collect_option === 'home_delivery') {
+            actionButtonsHtml = `
+              <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'out_for_delivery')">
+                🛵 Out for Delivery
+              </button>
+              <button class="btn btn-success btn-sm" onclick="updateOrderStatus(${orderId}, 'delivered')">
+                ✓ Mark Delivered
+              </button>
+            `;
+          } else {
+            actionButtonsHtml = `
+              <button class="btn btn-success btn-sm" onclick="updateOrderStatus(${orderId}, 'delivered')">
+                ✓ Customer Picked Up
+              </button>
+            `;
+          }
+        } else if (status === 'out_for_delivery') {
+          actionButtonsHtml = `
+            <button class="btn btn-success btn-sm" onclick="updateOrderStatus(${orderId}, 'delivered')">
+              ✓ Mark Delivered
+            </button>
+          `;
+        }
+
+        return `
+          <div class="order-card" style="border-left: 4px solid var(--primary);">
+            <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+              <div>
+                <strong style="font-size: 1.05rem;">${o.order_number}</strong>
+                <span style="font-size: 0.78rem; color: var(--text-muted); margin-left: 0.35rem;">(ID: ${orderId})</span>
+                <span class="badge ${badgeClass}" style="margin-left: 0.4rem;">
+                  ${status.replace(/_/g, ' ')}
+                </span>
+              </div>
+              <div style="font-size: 1.25rem; font-weight: 800; color: var(--primary);">
+                ₹${Number(o.total_amount || o.total).toFixed(2)}
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div>Shopper: <strong>${escapeHtml(o.shopper_name)}</strong> ${o.shopper_phone ? `(${o.shopper_phone})` : ''}</div>
+              <div>Fulfillment: <strong>${o.collect_option === 'home_delivery' ? '🛵 Home Delivery' : '🏬 Store Pickup'}</strong></div>
+              <div>Time: <strong>${o.time || o.created_at}</strong></div>
+            </div>
+
+            ${o.delivery_address ? `
+              <div style="font-size: 0.82rem; color: var(--text-body); background: var(--bg-subtle); padding: 0.4rem 0.6rem; border-radius: var(--radius-xs); margin-bottom: 0.6rem;">
+                📍 <strong>Address:</strong> ${escapeHtml(o.delivery_address)}
+              </div>
+            ` : ''}
+
+            <!-- Items -->
+            <div style="background: var(--bg-subtle); padding: 0.65rem 0.85rem; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 0.85rem;">
+              <div style="font-weight: 700; margin-bottom: 0.3rem;">Items (${quantity} total qty):</div>
+              ${items.map(it => `
+                <div style="display: flex; justify-content: space-between; padding: 0.15rem 0;">
+                  <span>• ${escapeHtml(it.product_name)} × <strong>${it.quantity}</strong></span>
+                  <span>₹${Number(it.subtotal).toFixed(2)}</span>
+                </div>
+              `).join("")}
+            </div>
+
+            ${status === 'rejected' ? `
+              <div style="color: var(--danger); font-size: 0.84rem; font-weight: 600; margin-bottom: 0.5rem;">
+                Rejection Reason: "${escapeHtml(o.reject_reason || 'Store could not fulfill items')}"
+              </div>
+            ` : ''}
+
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; border-top: 1px solid var(--border-light); padding-top: 0.65rem;">
+              <!-- Quick manual action buttons -->
+              <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                ${actionButtonsHtml}
+              </div>
+
+              <!-- Manual Status Override Selector -->
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Change:</span>
+                <select class="form-control" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.82rem;" onchange="updateOrderStatus(${orderId}, this.value)">
+                  <option value="pending" ${status === 'pending' ? 'selected' : ''}>Pending</option>
+                  <option value="accepted" ${status === 'accepted' ? 'selected' : ''}>Accepted</option>
+                  <option value="preparing" ${status === 'preparing' ? 'selected' : ''}>Preparing</option>
+                  <option value="ready" ${status === 'ready' ? 'selected' : ''}>Ready</option>
+                  <option value="out_for_delivery" ${status === 'out_for_delivery' ? 'selected' : ''}>Out for Delivery</option>
+                  <option value="delivered" ${status === 'delivered' ? 'selected' : ''}>Delivered</option>
+                  <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>Rejected</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+  } catch (err) {
+    if (!isSilent) console.error("Error loading orders:", err);
+  }
+}
+
+function filterOrdersByStatus(st, btnEl) {
+  document.querySelectorAll(".order-filter-bar .btn").forEach(el => el.classList.remove("active"));
+  if (btnEl) btnEl.classList.add("active");
+  const alertBanner = document.getElementById("newOrderAlertBanner");
+  if (alertBanner) alertBanner.style.display = "none";
+  loadShopkeeperOrders(st);
+}
+
+// UPDATE ORDER STATUS: Strictly updates to the chosen status!
+async function updateOrderStatus(orderId, newStatus, reason = null) {
+  if (!currentShop) return;
+
+  const payload = {
+    status: newStatus,
+    reject_reason: reason
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/orders/status/${orderId}?shop_id=${currentShop.shop_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message || `Order status updated to ${newStatus.toUpperCase()}`, "success");
+      loadShopkeeperOrders(currentOrderFilter);
+      loadShopStock();
+      loadShopDashboardMetrics();
+    } else {
+      showToast(data.detail || "Failed to update status", "danger");
+    }
+  } catch (err) {
+    showToast("Error updating order status.", "danger");
+  }
+}
+
+function openRejectOrderModal(orderId) {
+  document.getElementById("rejectTargetOrderId").value = orderId;
+  document.getElementById("rejectReasonCustom").value = "";
+  showModal("rejectOrderModal");
+}
+
+function handleRejectPresetChange(val) {
+  const custom = document.getElementById("rejectReasonCustom");
+  if (val !== "Other") {
+    custom.value = val;
+  } else {
+    custom.value = "";
+    custom.focus();
+  }
+}
+
+function handleConfirmOrderRejection(e) {
+  e.preventDefault();
+  const orderId = document.getElementById("rejectTargetOrderId").value;
+  const reason = document.getElementById("rejectReasonCustom").value.trim() || document.getElementById("rejectReasonPreset").value;
+
+  hideModal("rejectOrderModal");
+  updateOrderStatus(orderId, "rejected", reason);
+}
+
+// Sound notification using Web Audio API synthesis
+function playOrderNotificationChime() {
+  if (!audioNotificationsEnabled) return;
+
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    // Play a friendly multi-tone chime (C5, E5, G5)
+    const tones = [523.25, 659.25, 783.99];
+    tones.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.12, ctx.currentTime + idx * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.12 + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.12);
+      osc.stop(ctx.currentTime + idx * 0.12 + 0.4);
+    });
+  } catch (err) {}
+}
+
+function toggleAudioNotifications() {
+  audioNotificationsEnabled = !audioNotificationsEnabled;
+  const btn = document.getElementById("btnAudioToggle");
+  if (btn) {
+    btn.textContent = audioNotificationsEnabled ? "🔔 Sound: ON" : "🔕 Sound: MUTED";
+  }
+  showToast(`Order sound notifications ${audioNotificationsEnabled ? 'enabled' : 'muted'}.`, "info");
+}
+
+// =========================================================================
+// 4. INVENTORY MANAGEMENT & BUG 7 FIX
+// =========================================================================
+
+async function loadShopStock() {
+  if (!currentShop) return;
+
+  const cat = document.getElementById("stockCategoryFilter") ? document.getElementById("stockCategoryFilter").value : "";
+  const status = document.getElementById("stockStatusFilter") ? document.getElementById("stockStatusFilter").value : "";
+
+  let url = `${API_BASE}/stock/products?shop_id=${currentShop.shop_id}`;
+  if (cat) url += `&category=${encodeURIComponent(cat)}`;
+  if (status) url += `&status_filter=${encodeURIComponent(status)}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      shopCatalog = data.products || [];
       renderStockTable(shopCatalog);
-      populateShrinkageProductDropdown(shopCatalog);
       populateOfferProductsDropdown(shopCatalog);
+      renderPosQuickItems(shopCatalog);
+
+      // Low stock KPI
+      const lowCount = shopCatalog.filter(p => p.is_low_stock).length;
+      const kpiLow = document.getElementById("kpiLowStock");
+      if (kpiLow) kpiLow.textContent = lowCount;
     }
   } catch (err) {
     console.error("Error loading stock:", err);
   }
 }
 
-function populateOfferProductsDropdown(products) {
-  const sel = document.getElementById("offerProductSelect");
-  if (!sel) return;
-  const currentVal = sel.value;
-  sel.innerHTML = `<option value="">All Products (Store-wide Offer)</option>` +
-    (products || []).map(p => `<option value="${p.id}">${p.name} (₹${Number(p.price).toFixed(2)})</option>`).join("");
-  if (currentVal) sel.value = currentVal;
-}
-
 function renderStockTable(products) {
   const tbody = document.getElementById("stockTableBody");
+  if (!tbody) return;
+
   if (!products || products.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No products registered yet. Click 'Add Product' to start.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No products registered. Click '+ Add New Product' to stock items.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = products.map(p => {
+    const isOut = p.total_quantity === 0;
     const isLow = p.is_low_stock;
-    const badgeClass = p.total_quantity === 0 ? "badge-danger" : (isLow ? "badge-warning" : "badge-success");
-    const stockStatus = p.total_quantity === 0 ? "OUT OF STOCK" : (isLow ? "LOW STOCK" : "IN STOCK");
+    const badgeClass = isOut ? "badge-danger" : (isLow ? "badge-warning" : "badge-success");
+    const stockStatus = isOut ? "OUT OF STOCK" : (isLow ? "LOW STOCK" : "IN STOCK");
+    const isAvail = p.is_available !== false;
 
     return `
       <tr>
         <td>
-          <div style="font-weight: 700;">${p.name}</div>
-          <span class="badge badge-neutral">${p.category}</span>
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <img src="${p.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=100'}" style="width: 36px; height: 36px; border-radius: var(--radius-xs); object-fit: cover;" onerror="this.src='https://images.unsplash.com/photo-1542838132-92c53300491e?w=100'">
+            <div>
+              <div style="font-weight: 700;">${escapeHtml(p.name)}</div>
+              <span class="badge" style="background: var(--bg-subtle); color: var(--text-muted); font-size: 0.68rem;">${p.category} • ${p.unit || '1 pc'}</span>
+            </div>
+          </div>
         </td>
         <td><code>${p.barcode}</code></td>
-        <td style="font-weight: 700;">₹${p.price.toFixed(2)}</td>
         <td>
-          <span style="font-size: 1.1rem; font-weight: 800;">${p.total_quantity}</span>
-          <span class="badge ${badgeClass}" style="margin-left: 0.4rem;">${stockStatus}</span>
-        </td>
-        <td>${p.low_stock_threshold}</td>
-        <td>
-          <span style="font-size: 0.85rem; color: #475569;">${p.earliest_expiry}</span>
-          <div style="font-size: 0.72rem; color: var(--text-muted);">${p.batches.length} active batch(es)</div>
+          <div style="font-weight: 700;">₹${Number(p.price).toFixed(2)}</div>
+          ${p.mrp ? `<div style="font-size: 0.75rem; color: var(--text-light); text-decoration: line-through;">₹${Number(p.mrp).toFixed(2)}</div>` : ''}
         </td>
         <td>
-          <button class="btn btn-secondary btn-sm" onclick="openAddBatchModal('${p.barcode}', '${p.name.replace(/'/g, "\\'")}')">
-            + Batch
-          </button>
+          <span style="font-size: 1.15rem; font-weight: 800;">${p.total_quantity}</span>
+          <span class="badge ${badgeClass}" style="margin-left: 0.35rem;">${stockStatus}</span>
+        </td>
+        <td>${p.low_stock_threshold || 5}</td>
+        <td>
+          <span style="font-size: 0.85rem;">${p.earliest_expiry}</span>
+          <div style="font-size: 0.72rem; color: var(--text-muted);">${p.batches ? p.batches.length : 0} batch(es)</div>
+        </td>
+        <td style="text-align: right;">
+          <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+            <button class="btn btn-secondary btn-sm" onclick="openQuickStockModal(${p.id}, '${escapeHtml(p.name)}', ${p.total_quantity})" title="Adjust stock count">
+              📦 Stock
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="openEditProductModal(${p.id})" title="Edit product details">
+              ✏️
+            </button>
+            <button class="btn btn-sm ${isAvail ? 'btn-success' : 'btn-secondary'}" onclick="toggleProductAvailability(${p.id})" title="Toggle online availability">
+              ${isAvail ? '● Live' : '○ Off'}
+            </button>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteProduct(${p.id}, '${escapeHtml(p.name)}')" title="Delete product">
+              🗑️
+            </button>
+          </div>
         </td>
       </tr>
     `;
@@ -545,547 +718,242 @@ function filterStockTable(query) {
   renderStockTable(filtered);
 }
 
-async function handleAddProduct(e) {
+function openAddProductModal() {
+  document.getElementById("productForm").reset();
+  document.getElementById("productEditId").value = "";
+  document.getElementById("addProductModalTitle").textContent = "📦 Add Product to Store Inventory";
+  document.getElementById("btnSaveProduct").textContent = "Save Product to Inventory";
+  document.getElementById("initialBatchGroup").style.display = "grid";
+  document.getElementById("prodImagePreview").style.display = "none";
+  showModal("addProductModal");
+}
+
+function openEditProductModal(prodId) {
+  const p = shopCatalog.find(item => item.id === prodId);
+  if (!p) return;
+
+  document.getElementById("productEditId").value = p.id;
+  document.getElementById("prodNameInput").value = p.name;
+  document.getElementById("prodBarcodeInput").value = p.barcode;
+  document.getElementById("prodBrandInput").value = p.brand || "General";
+  document.getElementById("prodCategoryInput").value = p.category;
+  document.getElementById("prodPriceInput").value = p.price;
+  document.getElementById("prodMrpInput").value = p.mrp || "";
+  document.getElementById("prodUnitInput").value = p.unit || "1 pc";
+  document.getElementById("prodThresholdInput").value = p.low_stock_threshold || 5;
+  document.getElementById("prodImageInput").value = p.image_url || "";
+  document.getElementById("prodDescInput").value = p.description || "";
+  document.getElementById("prodAvailableInput").checked = p.is_available !== false;
+
+  updateImagePreview(p.image_url);
+
+  document.getElementById("addProductModalTitle").textContent = "✏️ Edit Product Details";
+  document.getElementById("btnSaveProduct").textContent = "Update Product";
+  document.getElementById("initialBatchGroup").style.display = "none";
+
+  showModal("addProductModal");
+}
+
+function updateImagePreview(url) {
+  const preview = document.getElementById("prodImagePreview");
+  if (url && url.trim()) {
+    preview.src = url;
+    preview.style.display = "block";
+  } else {
+    preview.style.display = "none";
+  }
+}
+
+async function handleSaveProduct(e) {
   e.preventDefault();
-  const form = e.target;
+  if (!currentShop) return;
+
+  const editId = document.getElementById("productEditId").value;
+  const isEdit = Boolean(editId);
+
   const payload = {
-    name: form.name.value.trim(),
-    barcode: form.barcode.value.trim(),
-    price: parseFloat(form.price.value),
-    category: form.category.value.trim(),
-    low_stock_threshold: parseInt(form.low_stock_threshold.value) || 5,
-    initial_quantity: parseInt(form.initial_quantity.value) || 0,
-    expiry_date: form.expiry_date.value || "2026-12-31"
+    name: document.getElementById("prodNameInput").value.trim(),
+    barcode: document.getElementById("prodBarcodeInput").value.trim() || null,
+    brand: document.getElementById("prodBrandInput").value.trim(),
+    category: document.getElementById("prodCategoryInput").value,
+    price: parseFloat(document.getElementById("prodPriceInput").value),
+    mrp: document.getElementById("prodMrpInput").value ? parseFloat(document.getElementById("prodMrpInput").value) : null,
+    unit: document.getElementById("prodUnitInput").value.trim(),
+    low_stock_threshold: parseInt(document.getElementById("prodThresholdInput").value) || 5,
+    image_url: document.getElementById("prodImageInput").value.trim() || null,
+    description: document.getElementById("prodDescInput").value.trim() || null,
+    is_available: document.getElementById("prodAvailableInput").checked
   };
 
+  if (!isEdit) {
+    payload.initial_quantity = parseInt(document.getElementById("prodInitialQtyInput").value) || 0;
+    payload.expiry_date = document.getElementById("prodExpiryInput").value || "2027-12-31";
+  }
+
+  const url = isEdit 
+    ? `${API_BASE}/stock/product/${editId}?shop_id=${currentShop.shop_id}`
+    : `${API_BASE}/stock/product?shop_id=${currentShop.shop_id}`;
+  const method = isEdit ? "PUT" : "POST";
+
   try {
-    const res = await fetch(`${API_BASE}/stock/product?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
+    const res = await fetch(url, {
+      method: method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
     const data = await res.json();
+
     if (res.ok && data.success) {
-      showToast(data.message, "success");
+      showToast(data.message || (isEdit ? "Product updated!" : "Product added to inventory!"), "success");
       hideModal("addProductModal");
-      form.reset();
-      loadStock();
-      loadAlerts();
+      loadShopStock();
+      loadShopDashboardMetrics();
     } else {
-      showToast(data.detail || "Failed to add product", "danger");
+      showToast(data.detail || "Failed to save product", "danger");
     }
   } catch (err) {
-    showToast("Error adding product", "danger");
+    showToast("Network error saving product", "danger");
   }
 }
 
-function openAddBatchModal(barcode = "", productName = "") {
-  const form = document.getElementById("addBatchForm");
-  form.barcode.value = barcode;
-  const nameLabel = document.getElementById("batchModalProductName");
-  if (nameLabel) {
-    nameLabel.textContent = productName ? `for ${productName}` : "";
-  }
-  showModal("addBatchModal");
+function openQuickStockModal(prodId, prodName, currentQty) {
+  document.getElementById("stockTargetProdId").value = prodId;
+  document.getElementById("stockProdNameLabel").textContent = prodName;
+  document.getElementById("currentStockCountDisplay").textContent = currentQty;
+  document.getElementById("quickStockQtyInput").value = currentQty;
+  showModal("quickStockModal");
 }
 
-async function handleAddBatch(e) {
+async function handleQuickStockUpdate(e) {
   e.preventDefault();
-  const form = e.target;
-  const payload = {
-    barcode: form.barcode.value.trim(),
-    quantity: parseInt(form.quantity.value),
-    expiry_date: form.expiry_date.value.trim(),
-    batch_number: form.batch_number.value.trim() || undefined
-  };
-
-  try {
-    const res = await fetch(`${API_BASE}/stock/batch?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      showToast(data.message, "success");
-      hideModal("addBatchModal");
-      form.reset();
-      loadStock();
-      loadAlerts();
-    } else {
-      showToast(data.detail || "Failed to add batch", "danger");
-    }
-  } catch (err) {
-    showToast("Error adding batch", "danger");
-  }
-}
-
-// =========================================================================
-// 5. ALERTS (Low Stock, Shrinkage, Expiry)
-// =========================================================================
-
-async function loadAlerts() {
   if (!currentShop) return;
-  loadLowStockAlerts();
-  loadExpiryAlerts();
-}
 
-async function loadLowStockAlerts() {
-  try {
-    const res = await fetch(`${API_BASE}/alerts/low-stock?shop_id=${currentShop.shop_id}`);
-    const data = await res.json();
-    const container = document.getElementById("lowStockAlertsList");
-    
-    if (res.ok && data.success) {
-      document.getElementById("lowStockCountBadge").textContent = data.count;
-      if (data.count === 0) {
-        container.innerHTML = `<div class="empty-state" style="padding: 1rem;">✅ All items are well-stocked above thresholds!</div>`;
-        return;
-      }
-      container.innerHTML = data.alerts.map(a => `
-        <div class="insight-card ${a.severity === 'CRITICAL' ? 'urgency-high' : 'urgency-medium'}">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <strong>${a.name}</strong>
-            <span class="badge ${a.severity === 'CRITICAL' ? 'badge-danger' : 'badge-warning'}">${a.severity}</span>
-          </div>
-          <p style="font-size: 0.85rem; margin-top: 0.3rem;">${a.message}</p>
-        </div>
-      `).join("");
-    }
-  } catch (err) {
-    console.error("Error loading low stock alerts:", err);
-  }
-}
-
-async function loadExpiryAlerts() {
-  try {
-    const res = await fetch(`${API_BASE}/alerts/expiry?shop_id=${currentShop.shop_id}&days_threshold=30`);
-    const data = await res.json();
-    const container = document.getElementById("expiryAlertsList");
-    
-    if (res.ok && data.success) {
-      document.getElementById("expiryCountBadge").textContent = data.count;
-      if (data.count === 0) {
-        container.innerHTML = `<div class="empty-state" style="padding: 1rem;">✅ No batches expiring in the next 30 days.</div>`;
-        return;
-      }
-      container.innerHTML = data.alerts.map(a => `
-        <div class="insight-card ${a.severity === 'EXPIRED' ? 'urgency-high' : (a.severity === 'CRITICAL' ? 'urgency-high' : 'urgency-medium')}">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <strong>${a.product_name} (Batch: ${a.batch_number})</strong>
-            <span class="badge ${a.severity === 'EXPIRED' ? 'badge-danger' : 'badge-warning'}">
-              ${a.is_expired ? 'EXPIRED' : `${a.days_left}d left`}
-            </span>
-          </div>
-          <p style="font-size: 0.82rem; color: #475569; margin: 0.25rem 0;">Qty: ${a.quantity} units | Expiry: ${a.expiry_date}</p>
-          <p style="font-size: 0.82rem; font-weight: 600; color: var(--primary);">${a.fefo_advice}</p>
-        </div>
-      `).join("");
-    }
-  } catch (err) {
-    console.error("Error loading expiry alerts:", err);
-  }
-}
-
-function populateShrinkageProductDropdown(products) {
-  const sel = document.getElementById("shrinkageProductSelect");
-  if (!sel) return;
-  sel.innerHTML = `<option value="">-- Select Product to Count --</option>` +
-    products.map(p => `<option value="${p.id}">${p.name} (Recorded Stock: ${p.total_quantity})</option>`).join("");
-}
-
-async function handleShrinkageCheck(e) {
-  e.preventDefault();
-  const form = e.target;
-  const prodId = parseInt(form.product_id.value);
-  const counted = parseInt(form.counted_quantity.value);
-  if (!prodId) {
-    showToast("Please select a product", "warning");
-    return;
-  }
+  const prodId = document.getElementById("stockTargetProdId").value;
+  const targetQty = parseInt(document.getElementById("quickStockQtyInput").value);
+  const expiry = document.getElementById("quickStockExpiryInput").value;
 
   try {
-    const res = await fetch(`${API_BASE}/alerts/shrinkage-check?shop_id=${currentShop.shop_id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ product_id: prodId, counted_quantity: counted })
-    });
-    const data = await res.json();
-    const resultBox = document.getElementById("shrinkageResultBox");
-
-    if (res.ok && data.success) {
-      resultBox.style.display = "block";
-      const isShrink = data.status === "SHRINKAGE_DETECTED";
-      const isSurplus = data.status === "SURPLUS_DETECTED";
-
-      resultBox.className = `insight-card ${isShrink ? 'urgency-high' : (isSurplus ? 'urgency-medium' : 'urgency-low')}`;
-      resultBox.innerHTML = `
-        <div style="font-weight: 700; margin-bottom: 0.4rem;">
-          ${isShrink ? '⚠️ Shrinkage Discrepancy Found' : (isSurplus ? 'ℹ️ Surplus Detected' : '✅ Exact Match')}
-        </div>
-        <p style="font-size: 0.9rem;">${data.message}</p>
-        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem;">
-          Expected: <strong>${data.expected_quantity}</strong> | Physically Counted: <strong>${data.counted_quantity}</strong>
-        </div>
-      `;
-    } else {
-      showToast(data.detail || "Shrinkage check failed", "danger");
-    }
-  } catch (err) {
-    showToast("Error checking shrinkage", "danger");
-  }
-}
-
-// =========================================================================
-// 6. UNMET-DEMAND INSIGHTS (Azure AI Stocking Advice)
-// =========================================================================
-
-async function loadDemandInsights() {
-  if (!currentShop) return;
-  const container = document.getElementById("demandInsightsList");
-  container.innerHTML = `<div style="text-align: center; padding: 2rem;">🧠 Analyzing customer demand & missed searches...</div>`;
-
-  try {
-    const res = await fetch(`${API_BASE}/insights/stocking-advice?shop_id=${currentShop.shop_id}`);
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      document.getElementById("missedSearchCountTotal").textContent = data.total_missed_searches;
-      document.getElementById("unmetDemandItemsCount").textContent = data.unmet_demand_items_count;
-
-      if (!data.stocking_advice || data.stocking_advice.length === 0) {
-        container.innerHTML = `<div class="empty-state">No unmet demand recorded yet. As shoppers search for unstocked items, AI stocking recommendations will appear here.</div>`;
-        return;
-      }
-
-      container.innerHTML = data.stocking_advice.map(adv => `
-        <div class="insight-card urgency-${adv.urgency ? adv.urgency.toLowerCase() : 'medium'}">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem;">
-            <div>
-              <strong style="font-size: 1.05rem;">${adv.term}</strong>
-              <span style="font-size: 0.78rem; color: var(--text-muted); margin-left: 0.5rem;">(${adv.count} shoppers searched)</span>
-            </div>
-            <span class="badge ${adv.urgency === 'High' ? 'badge-danger' : 'badge-warning'}">${adv.urgency} Urgency</span>
-          </div>
-          <p style="font-size: 0.92rem; color: #1e293b; line-height: 1.45;">${adv.advice}</p>
-        </div>
-      `).join("");
-    }
-  } catch (err) {
-    container.innerHTML = `<div class="empty-state">Error loading demand insights.</div>`;
-  }
-}
-
-// =========================================================================
-// 7. ONLINE ORDERS MANAGEMENT
-// =========================================================================
-
-async function loadOrders(filterStatus = "", isSilent = false) {
-  if (!currentShop) return;
-  currentOrderFilter = filterStatus;
-  const container = document.getElementById("ordersListContainer");
-  const url = filterStatus 
-    ? `${API_BASE}/orders/shopkeeper/list?shop_id=${currentShop.shop_id}&status_filter=${filterStatus}`
-    : `${API_BASE}/orders/shopkeeper/list?shop_id=${currentShop.shop_id}`;
-
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      const prevBadge = document.getElementById("ordersCountBadge");
-      const prevCount = prevBadge ? parseInt(prevBadge.textContent || "0") : 0;
-      if (prevBadge) prevBadge.textContent = data.count;
-
-      if (isSilent && data.count > prevCount) {
-        showToast(`🔔 New order received! Total: ${data.count}`, "success");
-      }
-
-      if (data.orders.length === 0) {
-        container.innerHTML = `<div class="empty-state">No orders matching this filter.</div>`;
-        return;
-      }
-
-      const statusBadgeStyles = {
-        pending: "background: #fef3c7; color: #b45309;",
-        accepted: "background: #dbeafe; color: #1d4ed8;",
-        preparing: "background: #f3e8ff; color: #7e22ce;",
-        ready: "background: #cffafe; color: #0e7490;",
-        delivered: "background: #dcfce7; color: #15803d;",
-        rejected: "background: #fee2e2; color: #b91c1c;",
-        completed: "background: #dcfce7; color: #15803d;",
-        picked_up: "background: #dcfce7; color: #15803d;",
-        out_for_delivery: "background: #fed7aa; color: #c2410c;"
-      };
-
-      container.innerHTML = data.orders.map(o => {
-        const orderId = o.orderId || o.id;
-        const shopId = o.shopId || o.shop_id;
-        const shopperName = o.shopper_name || (o.shopper ? o.shopper.name : "Shopper");
-        const shopperPhone = o.shopper_phone || (o.shopper ? o.shopper.phone : "");
-        const items = o.items || [];
-        const quantity = o.quantity || items.reduce((sum, it) => sum + it.quantity, 0);
-        const total = (o.total !== undefined ? o.total : o.total_amount) || 0;
-        const time = o.time || o.created_at;
-        const status = (o.status || "pending").toLowerCase();
-        const badgeStyle = statusBadgeStyles[status] || "background: #f1f5f9; color: #475569;";
-
-        return `
-          <div class="card" style="margin-bottom: 1rem; border-left: 4px solid var(--primary);">
-            <div class="card-header" style="margin-bottom: 0.6rem; padding-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
-              <div>
-                <strong style="font-size: 1.05rem;">${o.order_number}</strong>
-                <span style="font-size: 0.78rem; color: var(--text-muted); margin-left: 0.4rem;">(ID: ${orderId} • Shop ID: ${shopId})</span>
-                <span class="badge" style="margin-left: 0.5rem; text-transform: uppercase; font-weight: 700; ${badgeStyle}">
-                  ${status.replace(/_/g, ' ')}
-                </span>
-              </div>
-              <div style="font-weight: 800; font-size: 1.15rem; color: var(--primary);">₹${Number(total).toFixed(2)}</div>
-            </div>
-
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem;">
-              <div>Shopper: <strong>${shopperName}</strong> ${shopperPhone ? `(${shopperPhone})` : ''}</div>
-              <div>Collect: <strong>${o.collect_option === 'home_delivery' ? '🛵 Home Delivery' : '🏬 Pickup'}</strong></div>
-              <div>Time: <strong>${time}</strong></div>
-            </div>
-
-            <div style="background: #f8fafc; padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 0.8rem; border: 1px solid var(--surface-border);">
-              <div style="font-weight: 600; margin-bottom: 0.3rem;">Items (${quantity} total qty):</div>
-              ${items.map(it => `
-                <div style="display: flex; justify-content: space-between; padding: 0.15rem 0;">
-                  <span>• ${it.product_name} × <strong>${it.quantity}</strong></span>
-                  <span>₹${Number(it.subtotal).toFixed(2)}</span>
-                </div>
-              `).join("")}
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; padding-top: 0.4rem; border-top: 1px solid var(--surface-border);">
-              <!-- Quick Action Transition Buttons -->
-              <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
-                ${status === 'pending' ? `
-                  <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'accepted')">✓ Accept Order</button>
-                  <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${orderId}, 'rejected')">✕ Reject</button>
-                ` : ''}
-                ${status === 'accepted' ? `
-                  <button class="btn btn-primary btn-sm" onclick="updateOrderStatus(${orderId}, 'preparing')">🍳 Start Preparing</button>
-                  <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${orderId}, 'ready')">Ready</button>
-                  <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${orderId}, 'rejected')">Reject</button>
-                ` : ''}
-                ${status === 'preparing' ? `
-                  <button class="btn btn-accent btn-sm" onclick="updateOrderStatus(${orderId}, 'ready')">✓ Mark Ready</button>
-                  <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${orderId}, 'rejected')">Reject</button>
-                ` : ''}
-                ${status === 'ready' ? `
-                  <button class="btn btn-success btn-sm" onclick="updateOrderStatus(${orderId}, 'delivered')">🛵 Mark Delivered</button>
-                ` : ''}
-              </div>
-
-              <!-- Full Status Selector Dropdown -->
-              <div style="display: flex; align-items: center; gap: 0.4rem;">
-                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">Change Status:</span>
-                <select class="form-control" style="width: auto; padding: 0.25rem 0.6rem; font-size: 0.82rem; height: auto;" onchange="updateOrderStatus(${orderId}, this.value)">
-                  <option value="pending" ${status === 'pending' ? 'selected' : ''}>Pending</option>
-                  <option value="accepted" ${status === 'accepted' ? 'selected' : ''}>Accepted</option>
-                  <option value="preparing" ${status === 'preparing' ? 'selected' : ''}>Preparing</option>
-                  <option value="ready" ${status === 'ready' ? 'selected' : ''}>Ready</option>
-                  <option value="delivered" ${status === 'delivered' ? 'selected' : ''}>Delivered</option>
-                  <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>Rejected</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("");
-    }
-  } catch (err) {
-    if (!isSilent) console.error("Error loading orders:", err);
-  }
-}
-
-async function updateOrderStatus(orderId, newStatus) {
-  try {
-    const res = await fetch(`${API_BASE}/orders/status/${orderId}?shop_id=${currentShop.shop_id}`, {
+    const res = await fetch(`${API_BASE}/stock/product/${prodId}/stock?shop_id=${currentShop.shop_id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus })
+      body: JSON.stringify({ quantity: targetQty, expiry_date: expiry })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message || "Stock level updated!", "success");
+      hideModal("quickStockModal");
+      loadShopStock();
+      loadShopDashboardMetrics();
+    } else {
+      showToast(data.detail || "Failed to update stock", "danger");
+    }
+  } catch (err) {
+    showToast("Error updating stock count", "danger");
+  }
+}
+
+async function toggleProductAvailability(prodId) {
+  if (!currentShop) return;
+  try {
+    const res = await fetch(`${API_BASE}/stock/product/${prodId}/toggle-availability?shop_id=${currentShop.shop_id}`, {
+      method: "PUT"
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast(data.message || `Order status updated to ${newStatus}`, "success");
-      loadOrders(currentOrderFilter);
-      loadStock();
+      showToast(data.message, "info");
+      loadShopStock();
+    }
+  } catch (err) {}
+}
+
+async function deleteProduct(prodId, prodName) {
+  if (!confirm(`Are you sure you want to delete "${prodName}" from inventory? This will also remove its stock batches.`)) return;
+  if (!currentShop) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/stock/product/${prodId}?shop_id=${currentShop.shop_id}`, {
+      method: "DELETE"
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || "Product deleted.", "success");
+      loadShopStock();
+      loadShopDashboardMetrics();
     } else {
-      showToast(data.detail || "Failed to update status", "danger");
+      showToast(data.detail || "Failed to delete product", "danger");
     }
   } catch (err) {
-    showToast("Error updating order", "danger");
+    showToast("Network error deleting product", "danger");
   }
 }
 
 // =========================================================================
-// 8. SHARED DELIVERY SERVICE (1 KM CLUSTER & SPLIT SALARY)
+// 5. SEASONAL OFFERS MANAGEMENT & BUG 8 FIX
 // =========================================================================
-
-async function loadSharedDelivery() {
-  if (!currentShop) return;
-  try {
-    const res = await fetch(`${API_BASE}/delivery/cluster-info?shop_id=${currentShop.shop_id}`);
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      const d = data.delivery_details;
-      if (!d.has_cluster) {
-        const clusterArea = document.getElementById("clusterContentArea");
-        if (clusterArea) {
-          clusterArea.innerHTML = `
-            <div class="empty-state">
-              <p>${d.message}</p>
-              <button class="btn btn-primary btn-sm" onclick="recomputeClusters()" style="margin-top: 1rem;">Compute 1 km Clusters</button>
-            </div>
-          `;
-        }
-        return;
-      }
-
-      const clusterNameEl = document.getElementById("clusterNameDisplay");
-      if (clusterNameEl) clusterNameEl.textContent = d.cluster_name;
-      const riderNameEl = document.getElementById("sharedRiderName");
-      if (riderNameEl) riderNameEl.textContent = d.delivery_person_name;
-      const riderPhoneEl = document.getElementById("sharedRiderPhone");
-      if (riderPhoneEl) riderPhoneEl.textContent = d.delivery_person_phone || "";
-      const totalSalaryEl = document.getElementById("totalRiderSalary");
-      if (totalSalaryEl) totalSalaryEl.textContent = `₹${d.total_monthly_salary.toLocaleString()}`;
-      const sharingCountEl = document.getElementById("shopsSharingCount");
-      if (sharingCountEl) sharingCountEl.textContent = d.total_shops_sharing;
-      const salaryShareEl = document.getElementById("thisShopSalaryShare");
-      if (salaryShareEl) salaryShareEl.textContent = `₹${d.this_shop_share.toLocaleString()}`;
-
-      const listContainer = document.getElementById("clusterShopsList");
-      if (listContainer && d.shops) {
-        listContainer.innerHTML = d.shops.map(s => `
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--surface-border);">
-            <div>
-              <strong>${s.name}</strong> ${s.is_current_shop ? '<span class="badge badge-primary">THIS SHOP</span>' : ''}
-              <div style="font-size: 0.8rem; color: var(--text-muted);">${s.address}</div>
-            </div>
-            <span style="font-size: 0.85rem; font-weight: 700;">Share: ₹${d.this_shop_share}</span>
-          </div>
-        `).join("");
-      }
-    }
-  } catch (err) {
-    console.error("Error loading delivery cluster:", err);
-  }
-}
-
-async function recomputeClusters() {
-  try {
-    const res = await fetch(`${API_BASE}/delivery/recompute-clusters`, { method: "POST" });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      showToast("Clusters recomputed successfully!", "success");
-      loadSharedDelivery();
-    }
-  } catch (err) {
-    showToast("Error recomputing clusters", "danger");
-  }
-}
-
-// =========================================================================
-// 9. MARKETING (Loyalty Points & Seasonal Offers)
-// =========================================================================
-
-async function loadMarketing() {
-  if (!currentShop) return;
-  loadLoyaltySummary();
-  loadOffers();
-}
-
-async function loadLoyaltySummary() {
-  try {
-    const res = await fetch(`${API_BASE}/marketing/loyalty-summary?shop_id=${currentShop.shop_id}`);
-    const data = await res.json();
-    if (res.ok && data.success) {
-      document.getElementById("loyaltyTotalIssued").textContent = data.total_rewards_issued;
-      document.getElementById("loyaltyCustomerCount").textContent = data.total_customers_enrolled;
-
-      const tbody = document.getElementById("loyaltyCustomersTbody");
-      if (data.customers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No customer rewards issued yet. Customers earn 1 pt per ₹50 spent.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = data.customers.map(c => `
-        <tr>
-          <td><strong>${c.name}</strong></td>
-          <td>${c.phone}</td>
-          <td><strong style="color: var(--primary);">${c.total_points_earned} pts</strong></td>
-          <td>${c.last_active}</td>
-        </tr>
-      `).join("");
-    }
-  } catch (err) {
-    console.error("Error loading loyalty summary:", err);
-  }
-}
-
-let activeOffers = [];
 
 async function loadOffers() {
   if (!currentShop) return;
   try {
     const res = await fetch(`${API_BASE}/marketing/offers?shop_id=${currentShop.shop_id}`);
     const data = await res.json();
+
     if (res.ok && data.success) {
       activeOffers = data.offers || [];
       const container = document.getElementById("offersListContainer");
       if (activeOffers.length === 0) {
-        container.innerHTML = `<div class="empty-state">No active seasonal offers. Click '+ New Offer' to create one.</div>`;
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🏷️</div>
+            <div style="font-weight: 700;">No Seasonal Offers Active</div>
+            <p style="font-size: 0.85rem;">Create festival discounts to attract nearby shoppers on the mobile portal.</p>
+          </div>
+        `;
         return;
       }
+
       container.innerHTML = activeOffers.map(o => `
-        <div class="insight-card urgency-low" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-left: 4px solid var(--accent);">
+        <div class="card" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-left: 4px solid var(--accent); flex-wrap: wrap; gap: 0.75rem;">
           <div>
             <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-              <strong style="font-size: 1.05rem;">${o.title}</strong>
-              <span class="badge badge-success" style="font-weight: 700;">${o.discount_percent}% OFF</span>
+              <strong style="font-size: 1.05rem;">${escapeHtml(o.title)}</strong>
+              <span class="badge badge-success" style="font-weight: 800;">${o.discount_percent}% OFF</span>
             </div>
             <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.25rem;">
-              Product: <strong>${o.product_name}</strong> | Valid: <strong>${o.valid_from}</strong> to <strong>${o.valid_to}</strong>
+              Target: <strong>${escapeHtml(o.product_name)}</strong> • Valid: <strong>${o.valid_from}</strong> to <strong>${o.valid_to}</strong>
             </div>
           </div>
           <div style="display: flex; gap: 0.4rem;">
             <button class="btn btn-secondary btn-sm" onclick="openEditOfferModal(${o.id})">✏️ Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteOffer(${o.id})">🗑️ Delete</button>
+            <button class="btn btn-outline-danger btn-sm" onclick="deleteOffer(${o.id})">🗑️ Delete</button>
           </div>
         </div>
       `).join("");
     }
-  } catch (err) {
-    console.error("Error loading offers:", err);
-  }
+  } catch (err) {}
+}
+
+function populateOfferProductsDropdown(products) {
+  const sel = document.getElementById("offerProductSelect");
+  if (!sel) return;
+  const currentVal = sel.value;
+  sel.innerHTML = `<option value="">All Products (Store-wide discount)</option>` +
+    (products || []).map(p => `<option value="${p.id}">${escapeHtml(p.name)} (₹${Number(p.price).toFixed(2)})</option>`).join("");
+  if (currentVal) sel.value = currentVal;
 }
 
 function openCreateOfferModal() {
-  const form = document.getElementById("createOfferForm");
-  if (form) form.reset();
-  const editIdInput = document.getElementById("offerEditId");
-  if (editIdInput) editIdInput.value = "";
-  const titleEl = document.getElementById("offerModalTitle");
-  if (titleEl) titleEl.textContent = "🏷️ Create Seasonal Offer";
-  const submitBtn = document.getElementById("offerSubmitBtn");
-  if (submitBtn) submitBtn.textContent = "Publish Offer";
+  document.getElementById("createOfferForm").reset();
+  document.getElementById("offerEditId").value = "";
+  document.getElementById("offerModalTitle").textContent = "🏷️ Create Seasonal Offer";
+  document.getElementById("offerSubmitBtn").textContent = "Publish Offer";
 
   const todayStr = new Date().toISOString().split("T")[0];
   const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const fromEl = document.getElementById("offerValidFromInput");
-  if (fromEl) fromEl.value = todayStr;
-  const toEl = document.getElementById("offerValidToInput");
-  if (toEl) toEl.value = nextMonth;
+  document.getElementById("offerValidFromInput").value = todayStr;
+  document.getElementById("offerValidToInput").value = nextMonth;
 
-  if (shopCatalog && shopCatalog.length > 0) {
-    populateOfferProductsDropdown(shopCatalog);
-  }
-
+  populateOfferProductsDropdown(shopCatalog);
   showModal("createOfferModal");
 }
 
@@ -1093,72 +961,35 @@ function openEditOfferModal(offerId) {
   const offer = activeOffers.find(o => o.id === offerId);
   if (!offer) return;
 
-  const form = document.getElementById("createOfferForm");
-  if (form) form.reset();
+  populateOfferProductsDropdown(shopCatalog);
+  document.getElementById("offerEditId").value = offer.id;
+  document.getElementById("offerTitleInput").value = offer.title;
+  document.getElementById("offerDiscountInput").value = offer.discount_percent;
+  document.getElementById("offerProductSelect").value = offer.product_id ? String(offer.product_id) : "";
+  document.getElementById("offerValidFromInput").value = offer.valid_from;
+  document.getElementById("offerValidToInput").value = offer.valid_to;
 
-  if (shopCatalog && shopCatalog.length > 0) {
-    populateOfferProductsDropdown(shopCatalog);
-  }
-
-  const editIdInput = document.getElementById("offerEditId");
-  if (editIdInput) editIdInput.value = offer.id;
-
-  const titleInput = document.getElementById("offerTitleInput");
-  if (titleInput) titleInput.value = offer.title;
-
-  const discountInput = document.getElementById("offerDiscountInput");
-  if (discountInput) discountInput.value = offer.discount_percent;
-
-  const productSelect = document.getElementById("offerProductSelect");
-  if (productSelect) productSelect.value = offer.product_id ? String(offer.product_id) : "";
-
-  const fromInput = document.getElementById("offerValidFromInput");
-  if (fromInput) fromInput.value = offer.valid_from;
-
-  const toInput = document.getElementById("offerValidToInput");
-  if (toInput) toInput.value = offer.valid_to;
-
-  const titleEl = document.getElementById("offerModalTitle");
-  if (titleEl) titleEl.textContent = "✏️ Edit Seasonal Offer";
-
-  const submitBtn = document.getElementById("offerSubmitBtn");
-  if (submitBtn) submitBtn.textContent = "Save Changes";
+  document.getElementById("offerModalTitle").textContent = "✏️ Edit Seasonal Offer";
+  document.getElementById("offerSubmitBtn").textContent = "Save Changes";
 
   showModal("createOfferModal");
 }
 
 async function handleCreateOffer(e) {
   e.preventDefault();
-  const form = e.target;
-  const editId = document.getElementById("offerEditId") ? document.getElementById("offerEditId").value : "";
-  const title = form.title.value.trim();
-  const discountPercent = parseFloat(form.discount_percent.value);
-  const productId = (form.product_id && form.product_id.value) ? parseInt(form.product_id.value) : null;
-  const validFrom = form.valid_from.value;
-  const validTo = form.valid_to.value;
+  if (!currentShop) return;
 
-  if (!title) {
-    showToast("Offer title is required", "warning");
-    return;
-  }
-  if (isNaN(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
-    showToast("Please enter a valid discount percentage (1-100%)", "warning");
-    return;
-  }
-  if (!validFrom || !validTo) {
-    showToast("Start date and end date are required", "warning");
-    return;
-  }
+  const editId = document.getElementById("offerEditId").value;
+  const isEdit = Boolean(editId);
 
   const payload = {
-    title: title,
-    discount_percent: discountPercent,
-    product_id: productId,
-    valid_from: validFrom,
-    valid_to: validTo
+    title: document.getElementById("offerTitleInput").value.trim(),
+    discount_percent: parseFloat(document.getElementById("offerDiscountInput").value),
+    product_id: document.getElementById("offerProductSelect").value ? parseInt(document.getElementById("offerProductSelect").value) : null,
+    valid_from: document.getElementById("offerValidFromInput").value,
+    valid_to: document.getElementById("offerValidToInput").value
   };
 
-  const isEdit = Boolean(editId);
   const url = isEdit
     ? `${API_BASE}/marketing/offers/${editId}?shop_id=${currentShop.shop_id}`
     : `${API_BASE}/marketing/offers?shop_id=${currentShop.shop_id}`;
@@ -1171,22 +1002,23 @@ async function handleCreateOffer(e) {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
+
     if (res.ok && data.success) {
-      showToast(data.message || (isEdit ? "Offer updated successfully!" : "Seasonal offer created successfully!"), "success");
+      showToast(data.message || (isEdit ? "Offer updated!" : "Seasonal offer published!"), "success");
       hideModal("createOfferModal");
-      form.reset();
       loadOffers();
     } else {
       showToast(data.detail || "Failed to save offer", "danger");
     }
   } catch (err) {
-    console.error("Offer save error:", err);
-    showToast("Error saving offer. Please check connection.", "danger");
+    showToast("Error saving offer", "danger");
   }
 }
 
 async function deleteOffer(offerId) {
-  if (!confirm("Are you sure you want to delete this seasonal offer?")) return;
+  if (!confirm("Are you sure you want to remove this seasonal offer?")) return;
+  if (!currentShop) return;
+
   try {
     const res = await fetch(`${API_BASE}/marketing/offers/${offerId}?shop_id=${currentShop.shop_id}`, {
       method: "DELETE"
@@ -1204,68 +1036,361 @@ async function deleteOffer(offerId) {
 }
 
 // =========================================================================
-// 10. MODAL & EVENT LISTENERS
+// 6. DASHBOARD KPI METRICS & RECENT ORDERS
 // =========================================================================
 
-function setupEventListeners() {
-  // Navigation tab clicks
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.addEventListener("click", () => switchNavTab(btn.dataset.tab));
-  });
+async function loadShopDashboardMetrics() {
+  if (!currentShop) return;
 
-  // Barcode scanner input (USB / Bluetooth keyboard emulation presses Enter)
-  const scannerInput = document.getElementById("barcodeScannerInput");
-  if (scannerInput) {
-    scannerInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleBarcodeScan(scannerInput.value);
+  try {
+    const res = await fetch(`${API_BASE}/orders/shopkeeper/list?shop_id=${currentShop.shop_id}`);
+    const data = await res.json();
+
+    if (res.ok && data.success && data.orders) {
+      const orders = data.orders;
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayOrders = orders.filter(o => (o.time || o.created_at || "").startsWith(todayStr));
+      const totalRev = orders.filter(o => o.status !== 'rejected').reduce((s, o) => s + (o.total_amount || 0), 0);
+
+      document.getElementById("kpiTodayOrders").textContent = todayOrders.length || orders.length;
+      document.getElementById("kpiRevenue").textContent = `₹${totalRev.toFixed(2)}`;
+
+      // Render recent 3 orders
+      const recentContainer = document.getElementById("dashboardRecentOrders");
+      if (recentContainer) {
+        if (orders.length === 0) {
+          recentContainer.innerHTML = `<div class="empty-state">No orders yet.</div>`;
+        } else {
+          recentContainer.innerHTML = orders.slice(0, 3).map(o => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--border-light);">
+              <div>
+                <strong>${o.order_number}</strong> • ${escapeHtml(o.shopper_name)}
+                <div style="font-size: 0.75rem; color: var(--text-muted);">${o.time || o.created_at}</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span class="badge ${o.status === 'pending' ? 'badge-pending' : (o.status === 'accepted' ? 'badge-accepted' : 'badge-delivered')}">
+                  ${o.status}
+                </span>
+                <span style="font-weight: 800;">₹${Number(o.total_amount).toFixed(2)}</span>
+              </div>
+            </div>
+          `).join("");
+        }
       }
-    });
-  }
-
-  // Stock search input
-  const stockSearch = document.getElementById("stockSearchInput");
-  if (stockSearch) {
-    stockSearch.addEventListener("input", (e) => filterStockTable(e.target.value));
-  }
-
-  // Form submit listeners
-  const regForm = document.getElementById("registerShopForm");
-  if (regForm) regForm.addEventListener("submit", handleRegisterShop);
-
-  const addProdForm = document.getElementById("addProductForm");
-  if (addProdForm) addProdForm.addEventListener("submit", handleAddProduct);
-
-  const addBatchForm = document.getElementById("addBatchForm");
-  if (addBatchForm) addBatchForm.addEventListener("submit", handleAddBatch);
-
-  const shrinkForm = document.getElementById("shrinkageCheckForm");
-  if (shrinkForm) shrinkForm.addEventListener("submit", handleShrinkageCheck);
-
-  const offerForm = document.getElementById("createOfferForm");
-  if (offerForm) offerForm.addEventListener("submit", handleCreateOffer);
+    }
+  } catch (err) {}
 }
 
+async function loadDemandInsights() {
+  if (!currentShop) return;
+  const container = document.getElementById("demandInsightsContainer");
+  if (!container) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/insights/demand?shop_id=${currentShop.shop_id}`);
+    const data = await res.json();
+
+    if (res.ok && data.success && data.insights && data.insights.length > 0) {
+      container.innerHTML = data.insights.map(item => `
+        <div class="card" style="border-left: 4px solid var(--primary); background: #f8fafc;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+            <strong style="font-size: 0.95rem;">"${escapeHtml(item.item)}"</strong>
+            <span class="badge badge-accent">${item.unmet_searches} searches</span>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-body);">${escapeHtml(item.advice)}</p>
+        </div>
+      `).join("");
+    } else {
+      container.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">No missed searches logged yet.</div>`;
+    }
+  } catch (err) {}
+}
+
+// =========================================================================
+// 7. COUNTER SCAN & BILLING (POS DUAL SESSIONS)
+// =========================================================================
+
+function setupPosBilling() {
+  renderPosBillTable();
+  const inp = document.getElementById("posBarcodeInput");
+  if (inp) inp.focus();
+}
+
+function switchBillingTab(tab) {
+  activeBillingTab = tab;
+  document.getElementById("posTab1Btn").className = tab === "tab_1" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+  document.getElementById("posTab2Btn").className = tab === "tab_2" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+  renderPosBillTable();
+}
+
+function renderPosBillTable() {
+  const session = billingSessions[activeBillingTab];
+  const tbody = document.getElementById("posBillTableBody");
+  const totalDisplay = document.getElementById("posTotalDisplay");
+  if (!tbody || !totalDisplay) return;
+
+  if (session.items.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No items added to current session. Scan a barcode above.</td></tr>`;
+    totalDisplay.textContent = "₹0.00";
+    return;
+  }
+
+  tbody.innerHTML = session.items.map(it => `
+    <tr>
+      <td><strong>${escapeHtml(it.name)}</strong></td>
+      <td>${it.quantity}</td>
+      <td>₹${it.price.toFixed(2)}</td>
+      <td style="font-weight: 700;">₹${(it.price * it.quantity).toFixed(2)}</td>
+      <td><button class="btn btn-outline-danger btn-sm" onclick="removePosItem(${it.product_id})" style="padding: 0.15rem 0.4rem;">✕</button></td>
+    </tr>
+  `).join("");
+
+  const total = session.items.reduce((s, it) => s + (it.price * it.quantity), 0);
+  session.total = total;
+  totalDisplay.textContent = `₹${total.toFixed(2)}`;
+}
+
+function handleBarcodeScan(e) {
+  e.preventDefault();
+  const input = document.getElementById("posBarcodeInput");
+  const barcode = input.value.trim();
+  if (!barcode) return;
+
+  const product = shopCatalog.find(p => p.barcode === barcode);
+  if (product) {
+    addPosItem(product);
+    input.value = "";
+    input.focus();
+  } else {
+    showToast(`No item found with barcode "${barcode}"`, "warning");
+  }
+}
+
+function addPosItem(product) {
+  const session = billingSessions[activeBillingTab];
+  const existing = session.items.find(it => it.product_id === product.id);
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    session.items.push({
+      product_id: product.id,
+      name: product.name,
+      price: product.price,
+      quantity: 1
+    });
+  }
+  renderPosBillTable();
+}
+
+function removePosItem(prodId) {
+  const session = billingSessions[activeBillingTab];
+  session.items = session.items.filter(it => it.product_id !== prodId);
+  renderPosBillTable();
+}
+
+function clearCurrentBill() {
+  billingSessions[activeBillingTab].items = [];
+  billingSessions[activeBillingTab].total = 0;
+  renderPosBillTable();
+}
+
+async function completePosCheckout(paymentMethod) {
+  const session = billingSessions[activeBillingTab];
+  if (session.items.length === 0) {
+    showToast("Bill is empty. Scan items first.", "warning");
+    return;
+  }
+  if (!currentShop) return;
+
+  const payload = {
+    session_tab: activeBillingTab,
+    payment_method: paymentMethod,
+    items: session.items.map(it => ({ product_id: it.product_id, quantity: it.quantity }))
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/billing/checkout?shop_id=${currentShop.shop_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(`Bill paid: ₹${session.total.toFixed(2)} via ${paymentMethod.toUpperCase()}`, "success");
+      clearCurrentBill();
+      loadShopStock();
+      loadShopDashboardMetrics();
+    } else {
+      showToast(data.detail || "Checkout failed", "danger");
+    }
+  } catch (err) {
+    showToast("Error processing bill", "danger");
+  }
+}
+
+function renderPosQuickItems(products) {
+  const container = document.getElementById("posQuickItemsGrid");
+  if (!container) return;
+
+  container.innerHTML = products.slice(0, 10).map(p => `
+    <div class="card" style="padding: 0.65rem; cursor: pointer;" onclick="addPosItem({id: ${p.id}, name: '${escapeHtml(p.name)}', price: ${p.price}})">
+      <div style="font-weight: 700; font-size: 0.85rem;">${escapeHtml(p.name)}</div>
+      <div style="font-size: 0.8rem; color: var(--primary); font-weight: 800;">₹${Number(p.price).toFixed(2)}</div>
+    </div>
+  `).join("");
+}
+
+// =========================================================================
+// 8. STORE PROFILE MODAL & 1 KM CLUSTER
+// =========================================================================
+
+async function openShopProfileModal() {
+  if (!currentShop) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/shopkeeper/profile?shop_id=${currentShop.shop_id}`);
+    const data = await res.json();
+
+    if (res.ok && data.success && data.shop) {
+      const s = data.shop;
+      document.getElementById("shopProfName").value = s.name || "";
+      document.getElementById("shopProfOwner").value = s.owner_name || "";
+      document.getElementById("shopProfPhone").value = s.phone || "";
+      document.getElementById("shopProfEmail").value = s.email || "";
+      document.getElementById("shopProfAddress").value = s.address || "";
+      document.getElementById("shopProfCategory").value = s.category || "";
+      document.getElementById("shopProfHours").value = s.opening_hours || "";
+      document.getElementById("shopProfPhoto").value = s.photo_url || "";
+      document.getElementById("shopProfIsOpen").checked = s.is_open !== false;
+
+      showModal("shopProfileModal");
+    }
+  } catch (err) {}
+}
+
+async function handleSaveShopProfile(e) {
+  e.preventDefault();
+  if (!currentShop) return;
+
+  const payload = {
+    shop_name: document.getElementById("shopProfName").value.trim(),
+    owner_name: document.getElementById("shopProfOwner").value.trim(),
+    phone: document.getElementById("shopProfPhone").value.trim(),
+    email: document.getElementById("shopProfEmail").value.trim() || null,
+    address: document.getElementById("shopProfAddress").value.trim(),
+    category: document.getElementById("shopProfCategory").value.trim(),
+    opening_hours: document.getElementById("shopProfHours").value.trim(),
+    photo_url: document.getElementById("shopProfPhoto").value.trim() || null,
+    is_open: document.getElementById("shopProfIsOpen").checked
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/shopkeeper/profile?shop_id=${currentShop.shop_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success && data.shop) {
+      currentShop.name = data.shop.name;
+      currentShop.owner_name = data.shop.owner_name;
+      currentShop.phone = data.shop.phone;
+      currentShop.email = data.shop.email;
+      currentShop.address = data.shop.address;
+      currentShop.is_open = data.shop.is_open;
+
+      currentShopkeeper.shop_name = data.shop.name;
+      currentShopkeeper.name = data.shop.owner_name;
+      currentShopkeeper.is_open = data.shop.is_open;
+      localStorage.setItem("agorazure_shopkeeper", JSON.stringify(currentShopkeeper));
+
+      renderShopkeeperHeader();
+      hideModal("shopProfileModal");
+      showToast("Store profile updated successfully!", "success");
+    } else {
+      showToast(data.detail || "Failed to update profile", "danger");
+    }
+  } catch (err) {
+    showToast("Error updating store profile", "danger");
+  }
+}
+
+async function loadSharedDelivery() {
+  if (!currentShop) return;
+  const area = document.getElementById("clusterContentArea");
+  if (!area) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/delivery/cluster-info?shop_id=${currentShop.shop_id}`);
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      const d = data.delivery_details;
+      area.innerHTML = `
+        <div class="card" style="border-left: 4px solid var(--accent); max-width: 650px;">
+          <div style="font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem;">
+            Cluster: ${escapeHtml(d.cluster_name)}
+          </div>
+          <div style="font-size: 0.9rem; color: var(--text-body); line-height: 1.6;">
+            Dedicated Partner: <strong>${escapeHtml(d.delivery_person_name || 'Rider Assigned')}</strong> ${d.delivery_person_phone ? `(${d.delivery_person_phone})` : ''}<br>
+            Total Monthly Partner Salary: <strong>₹${Number(d.total_monthly_salary).toLocaleString()}</strong><br>
+            Nearby Shops Sharing Rider: <strong>${d.total_shops_sharing} shops</strong><br>
+            <div style="margin-top: 0.6rem; padding: 0.6rem; background: var(--bg-subtle); border-radius: var(--radius-sm); font-weight: 700; color: var(--primary);">
+              Your Store's Monthly Share: ₹${Number(d.salary_split_per_shop).toFixed(2)} / month
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  } catch (err) {}
+}
+
+// =========================================================================
+// 9. MODALS & UTILITIES
+// =========================================================================
+
 function showModal(id) {
-  const modal = document.getElementById(id);
-  if (modal) modal.classList.add("active");
+  const m = document.getElementById(id);
+  if (m) m.classList.add("active");
 }
 
 function hideModal(id) {
-  const modal = document.getElementById(id);
-  if (modal) modal.classList.remove("active");
-  focusScanner();
+  const m = document.getElementById(id);
+  if (m) m.classList.remove("active");
 }
 
-function showToast(message, type = "success") {
+function showToast(msg, type = "info") {
   const container = document.getElementById("toastContainer");
   if (!container) return;
+
+  const icons = {
+    success: "✓",
+    danger: "✕",
+    warning: "⚠️",
+    info: "ℹ️"
+  };
+
   const toast = document.createElement("div");
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${icons[type] || '•'}</span><span>${escapeHtml(msg)}</span>`;
   container.appendChild(toast);
+
   setTimeout(() => {
-    toast.remove();
-  }, 3200);
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(8px)";
+    toast.style.transition = "all 0.2s ease";
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

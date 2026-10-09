@@ -178,3 +178,32 @@ def delete_offer(
     db.delete(offer)
     db.commit()
     return {"success": True, "message": "Offer deleted."}
+
+@router.get("/active-banners")
+def get_active_banners(db: Session = Depends(get_db)):
+    """Fetches all currently valid offers across all shops for the shopper banner carousel."""
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    offers = db.query(Offer).filter(
+        Offer.active == True,
+        Offer.valid_from <= today_str,
+        Offer.valid_to >= today_str
+    ).order_by(Offer.discount_percent.desc()).limit(6).all()
+
+    banners = []
+    for o in offers:
+        shop = o.shop
+        prod = o.product
+        banners.append({
+            "id": o.id,
+            "title": o.title,
+            "discount_percent": o.discount_percent,
+            "badge": f"{int(o.discount_percent)}% OFF",
+            "shop_id": o.shop_id,
+            "shop_name": shop.name if shop else "Local Store",
+            "product_name": prod.name if prod else "Store-wide Discount",
+            "valid_to": o.valid_to,
+            "banner_text": o.banner_text or f"Save {int(o.discount_percent)}% at {shop.name if shop else 'Store'}!"
+        })
+
+    return {"success": True, "banners": banners}
+

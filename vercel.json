@@ -1,8 +1,11 @@
 {
+  "version": 2,
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
     { "source": "/shopper", "destination": "/shopper.html" },
-    { "source": "/shopkeeper", "destination": "/shopkeeper.html" }
+    { "source": "/shopkeeper", "destination": "/shopkeeper.html" },
+    { "source": "/", "destination": "/index.html" }
   ]
 }

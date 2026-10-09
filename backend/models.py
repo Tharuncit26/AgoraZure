@@ -37,8 +37,13 @@ class Shop(Base):
     name = Column(String(150), nullable=False)
     owner_name = Column(String(100), nullable=False)
     phone = Column(String(20), unique=True, index=True, nullable=False)
+    email = Column(String(120), nullable=True)
     password_hash = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
+    category = Column(String(100), default="Grocery & Supermarket")
+    opening_hours = Column(String(100), default="7:00 AM - 10:00 PM")
+    photo_url = Column(Text, nullable=True)
+    is_open = Column(Boolean, default=True)
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     cluster_id = Column(Integer, ForeignKey("delivery_clusters.id"), nullable=True)
@@ -61,6 +66,7 @@ class Shopkeeper(Base):
     shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
     name = Column(String(100), nullable=False)
     phone = Column(String(20), unique=True, index=True, nullable=False)
+    email = Column(String(120), nullable=True)
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -73,6 +79,7 @@ class Shopper(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     phone = Column(String(20), unique=True, index=True, nullable=False)
+    email = Column(String(120), nullable=True)
     password_hash = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
     latitude = Column(Float, nullable=False)
@@ -91,8 +98,14 @@ class Product(Base):
     shop_id = Column(Integer, ForeignKey("shops.id"), nullable=False)
     name = Column(String(150), nullable=False, index=True)
     barcode = Column(String(100), nullable=False, index=True)
+    brand = Column(String(100), default="General")
+    description = Column(Text, nullable=True)
     price = Column(Float, nullable=False)
+    mrp = Column(Float, nullable=True)
+    unit = Column(String(50), default="1 pc")
     category = Column(String(100), default="General")
+    image_url = Column(Text, nullable=True)
+    is_available = Column(Boolean, default=True)
     low_stock_threshold = Column(Integer, default=5)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -155,9 +168,18 @@ class Order(Base):
     order_number = Column(String(50), unique=True, index=True, nullable=False)
     order_type = Column(String(30), default="buy_from_home")  # prebook or buy_from_home
     collect_option = Column(String(30), default="pickup")     # pickup or home_delivery
-    status = Column(String(30), default="pending")            # pending, accepted, ready, picked_up, out_for_delivery, completed
+    status = Column(String(30), default="pending")            # pending, accepted, preparing, ready, out_for_delivery, delivered, rejected, cancelled
+    delivery_address = Column(String(255), nullable=True)
+    payment_method = Column(String(50), default="Cash on Delivery")
+    payment_status = Column(String(50), default="pending")
+    subtotal = Column(Float, default=0.0)
+    delivery_fee = Column(Float, default=0.0)
+    tax_amount = Column(Float, default=0.0)
+    discount_amount = Column(Float, default=0.0)
     total_amount = Column(Float, nullable=False, default=0.0)
+    reject_reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     shopper = relationship("Shopper", back_populates="orders")
     shop = relationship("Shop", back_populates="orders")
@@ -226,6 +248,7 @@ class Offer(Base):
     valid_from = Column(String(20), nullable=False)
     valid_to = Column(String(20), nullable=False)
     active = Column(Boolean, default=True)
+    banner_text = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     shop = relationship("Shop", back_populates="offers")

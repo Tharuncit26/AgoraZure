@@ -3,659 +3,722 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgoraZure - Shopkeeper POS & Smart Commerce Portal</title>
+  <title>AgoraZure - Shopkeeper Merchant Dashboard & Live POS</title>
+  <meta name="description" content="Merchant portal for live inventory management, order fulfillment, and seasonal campaigns.">
+  <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 
-  <!-- App Header -->
+  <!-- Top Merchant Header -->
   <header class="app-header">
     <div class="header-container">
-      <div class="logo-area">
-        <div class="logo-icon">🏪</div>
-        <span>AgoraZure <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); padding: 0.2rem 0.5rem; background: #f1f5f9; border-radius: 6px;">SHOPKEEPER</span></span>
+      
+      <!-- Brand Logo -->
+      <div class="logo-area" onclick="location.href='/'">
+        <img src="/images/logo.png" alt="AgoraZure Logo" class="logo-img">
+        <div class="logo-text">
+          AgoraZure
+          <span class="portal-tag shopkeeper">Merchant</span>
+        </div>
       </div>
 
+      <!-- Shop Info & Status Header -->
       <div class="header-actions" id="shopAuthBar" style="display: none;">
+        <!-- Shop Name & Status -->
         <div style="text-align: right; margin-right: 0.5rem;">
-          <div id="shopNameDisplay" style="font-weight: 700; font-size: 0.95rem; line-height: 1.2;">Gupta Supermart</div>
-          <div id="shopOwnerDisplay" style="font-size: 0.78rem; color: var(--text-muted);">Rajesh Gupta</div>
-          <div id="shopAddressDisplay" style="font-size: 0.72rem; color: var(--text-muted);">Indiranagar, Bengaluru</div>
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem;">
+            <strong id="shopNameDisplay" style="font-size: 0.95rem;">Gupta Supermart</strong>
+            <span class="badge" id="shopOpenStatusBadge" style="background: #dcfce7; color: #15803d; font-size: 0.68rem;">OPEN</span>
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="shopOwnerDisplay">Rajesh Gupta • Indiranagar</div>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+
+        <!-- Open/Closed Quick Toggle -->
+        <button class="btn btn-secondary btn-sm" id="btnToggleShopOpen" onclick="toggleShopOpenState()" title="Toggle Shop Open/Closed">
+          🔄 Store Status
+        </button>
+
+        <!-- Sound Chime Toggle -->
+        <button class="btn btn-secondary btn-sm" id="btnAudioToggle" onclick="toggleAudioNotifications()" title="Order Audio Chimes: Enabled">
+          🔔 Sound: ON
+        </button>
+
+        <!-- Logout -->
+        <button class="btn btn-secondary btn-sm" onclick="shopkeeperLogout()" title="Logout">
+          🚪 Logout
+        </button>
       </div>
+
     </div>
   </header>
 
-  <!-- Navigation Tabs (Mobile-First Scrolling Tabs) -->
-  <nav class="nav-tabs">
-    <div class="tabs-container">
-      <button class="tab-btn active" data-tab="billing" id="tabBtnBilling">
-        <span>💳</span> Scan & Bill
-      </button>
-      <button class="tab-btn" data-tab="stock" id="tabBtnStock">
-        <span>📦</span> Stock & Batches
-      </button>
-      <button class="tab-btn" data-tab="alerts" id="tabBtnAlerts">
-        <span>⚠️</span> Alerts
-      </button>
-      <button class="tab-btn" data-tab="insights" id="tabBtnInsights">
-        <span>🧠</span> Demand AI
-      </button>
-      <button class="tab-btn" data-tab="orders" id="tabBtnOrders">
-        <span>🛍️</span> Orders (<span id="ordersCountBadge">0</span>)
-      </button>
-      <button class="tab-btn" data-tab="delivery" id="tabBtnDelivery">
-        <span>🛵</span> Shared Delivery
-      </button>
-      <button class="tab-btn" data-tab="marketing" id="tabBtnMarketing">
-        <span>🎁</span> Loyalty & Offers
-      </button>
-    </div>
-  </nav>
-
-  <!-- Main Content Layout -->
-  <main class="main-content">
-
-    <!-- ================================================================= -->
-    <!-- TAB 1: SCAN & BILL (POS ENGINE) -->
-    <!-- ================================================================= -->
-    <section class="tab-panel active" id="tab-billing">
-      
-      <!-- Dual Billing Tabs Switcher -->
-      <div class="billing-tab-switcher">
-        <button class="billing-session-btn active" id="btnBillTab1" onclick="switchBillingSession('tab_1')">
-          <span>Bill Tab 1 (Customer A)</span>
-          <span class="badge badge-primary" id="countBadge_tab_1">0</span>
-        </button>
-        <button class="billing-session-btn" id="btnBillTab2" onclick="switchBillingSession('tab_2')">
-          <span>Bill Tab 2 (Customer B)</span>
-          <span class="badge badge-neutral" id="countBadge_tab_2">0</span>
-        </button>
+  <!-- Merchant Portal Layout (Sidebar + Main Content Pane) -->
+  <div class="shop-layout" id="shopkeeperDashboardSection" style="display: none;">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="shop-sidebar">
+      <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.6rem 0.2rem;">
+        STORE OPERATIONS
       </div>
 
-      <!-- Always-Focused Barcode Scanner Input -->
-      <div class="card" style="border: 2px solid var(--primary-light); background: #ffffff;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-          <span style="font-size: 0.82rem; font-weight: 700; color: var(--primary-dark); display: flex; align-items: center;">
-            <span class="scanner-pulse"></span> SCANNER ACTIVE (KEYBOARD INPUT EMULATION)
-          </span>
-          <span style="font-size: 0.75rem; color: var(--text-muted);">Plug & play barcode scanner or press Enter</span>
-        </div>
+      <a class="sidebar-link active" onclick="switchShopTab('dashboard', this)">
+        <span>📊</span> Dashboard Overview
+      </a>
 
-        <div class="scanner-input-container">
-          <span class="scanner-icon">🔍</span>
-          <input 
-            type="text" 
-            id="barcodeScannerInput" 
-            class="scanner-input" 
-            placeholder="Scan barcode here (e.g. 890103000001) & press Enter..." 
-            autofocus 
-            autocomplete="off"
-          >
-        </div>
+      <a class="sidebar-link" onclick="switchShopTab('orders', this)">
+        <span>🔔</span> Live Orders
+        <span class="sidebar-badge badge-danger" id="sidebarOrderCount" style="display: none;">0</span>
+      </a>
+
+      <a class="sidebar-link" onclick="switchShopTab('inventory', this)">
+        <span>📦</span> Stock & Inventory
+      </a>
+
+      <a class="sidebar-link" onclick="switchShopTab('billing', this)">
+        <span>💳</span> Counter Billing (POS)
+      </a>
+
+      <a class="sidebar-link" onclick="switchShopTab('offers', this)">
+        <span>🏷️</span> Seasonal Offers
+      </a>
+
+      <a class="sidebar-link" onclick="switchShopTab('delivery', this)">
+        <span>🛵</span> 1 km Cluster Delivery
+      </a>
+
+      <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 1.25rem 0.6rem 0.2rem;">
+        ACCOUNT & STORE
       </div>
 
-      <!-- Active Bill Items Table -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>🛒</span> Current Bill Items
+      <a class="sidebar-link" onclick="openShopProfileModal()">
+        <span>🏪</span> Store Profile & Hours
+      </a>
+
+      <a class="sidebar-link" onclick="shopkeeperLogout()" style="color: var(--danger); margin-top: auto;">
+        <span>🚪</span> Sign Out
+      </a>
+    </aside>
+
+    <!-- Main Content Pane -->
+    <main class="shop-main-pane">
+
+      <!-- ===================================================================
+           TAB 1: DASHBOARD OVERVIEW
+           =================================================================== -->
+      <section id="pane-dashboard">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem;">
+          <div>
+            <h1 style="font-size: 1.5rem;">Merchant Dashboard</h1>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">Real-time orders, store metrics and stock replenishment alerts</p>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="clearCurrentBill()">Clear Bill</button>
+          <button class="btn btn-primary btn-sm" onclick="switchShopTab('orders', document.querySelectorAll('.sidebar-link')[1])">
+            View Live Orders Board ➔
+          </button>
         </div>
 
+        <!-- 4 KPI Summary Cards -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div>
+              <div class="kpi-title">Today's Orders</div>
+              <div class="kpi-value" id="kpiTodayOrders">0</div>
+            </div>
+            <div class="kpi-icon-wrap" style="background: #e0f2fe; color: #0369a1;">📦</div>
+          </div>
+
+          <div class="kpi-card">
+            <div>
+              <div class="kpi-title">Total Revenue</div>
+              <div class="kpi-value" id="kpiRevenue">₹0.00</div>
+            </div>
+            <div class="kpi-icon-wrap" style="background: #dcfce7; color: #15803d;">💰</div>
+          </div>
+
+          <div class="kpi-card">
+            <div>
+              <div class="kpi-title">Pending Action</div>
+              <div class="kpi-value" id="kpiPendingOrders" style="color: #b45309;">0</div>
+            </div>
+            <div class="kpi-icon-wrap" style="background: #fef3c7; color: #b45309;">⏳</div>
+          </div>
+
+          <div class="kpi-card">
+            <div>
+              <div class="kpi-title">Low Stock Items</div>
+              <div class="kpi-value" id="kpiLowStock" style="color: #dc2626;">0</div>
+            </div>
+            <div class="kpi-icon-wrap" style="background: #fee2e2; color: #dc2626;">⚠️</div>
+          </div>
+        </div>
+
+        <!-- Live Orders Quick View -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <h3>🔔 Recent Online Orders</h3>
+            <button class="btn btn-secondary btn-sm" onclick="switchShopTab('orders', document.querySelectorAll('.sidebar-link')[1])">Open Board</button>
+          </div>
+          <div id="dashboardRecentOrders">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Unmet Demand / AI Stocking Insights Loop -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🤖 AI Unmet-Demand Loop & Recommendations</h3>
+            <span class="badge badge-accent">Shopper Searches</span>
+          </div>
+          <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 1rem;">
+            When shoppers in your area search for items that aren't currently in stock, AgoraZure analyzes demand patterns and notifies shoppers automatically once you restock!
+          </p>
+          <div id="demandInsightsContainer" class="grid grid-cols-2">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 2: LIVE ORDERS BOARD (ACCEPT / PREPARING / READY / DELIVERED)
+           =================================================================== -->
+      <section id="pane-orders" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h1 style="font-size: 1.5rem;">Live Orders Management</h1>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Manage customer orders. Orders only update upon manual click.
+            </p>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" onclick="loadShopkeeperOrders(currentOrderFilter)">
+              🔄 Refresh Orders
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="order-filter-bar">
+          <button class="btn btn-secondary btn-sm active" onclick="filterOrdersByStatus('', this)">
+            All (<span id="countAll">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="filterOrdersByStatus('pending', this)">
+            🟡 New Pending (<span id="countPending">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="filterOrdersByStatus('accepted', this)">
+            🔵 Accepted (<span id="countAccepted">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="filterOrdersByStatus('preparing', this)">
+            🟣 Preparing (<span id="countPreparing">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="filterOrdersByStatus('ready', this)">
+            🟢 Ready / Out (<span id="countReady">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="filterOrdersByStatus('delivered', this)">
+            🏁 Completed (<span id="countDelivered">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="filterOrdersByStatus('rejected', this)">
+            🔴 Rejected (<span id="countRejected">0</span>)
+          </button>
+        </div>
+
+        <!-- Incoming Order Live Alert Banner -->
+        <div id="newOrderAlertBanner" style="display: none; background: #ecfdf5; border: 2px solid #10b981; border-radius: var(--radius-md); padding: 0.85rem 1.15rem; margin-bottom: 1.25rem; animation: pulseMarker 1.5s infinite;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span style="font-size: 1.4rem;">🔔</span>
+              <div>
+                <strong style="color: #065f46;">New Order Received!</strong>
+                <div style="font-size: 0.8rem; color: #047857;">Click Accept below to confirm and begin packing.</div>
+              </div>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="loadShopkeeperOrders('pending')">Review Order</button>
+          </div>
+        </div>
+
+        <!-- Orders Cards Container -->
+        <div id="ordersListContainer">
+          <!-- Populated via JS -->
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 3: STOCK & INVENTORY
+           =================================================================== -->
+      <section id="pane-inventory" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h1 style="font-size: 1.5rem;">Inventory & Stock Management</h1>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Manage products, batches, pricing, and live availability for shoppers.
+            </p>
+          </div>
+
+          <button class="btn btn-primary btn-sm" onclick="openAddProductModal()">
+            + Add New Product
+          </button>
+        </div>
+
+        <!-- Inventory Filter & Search Bar -->
+        <div class="card" style="margin-bottom: 1.25rem; padding: 0.85rem 1.15rem;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem; flex: 1; max-width: 360px;">
+              <input type="text" id="inventorySearchInput" class="form-control" placeholder="Search stock by name, barcode..." oninput="filterStockTable(this.value)">
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <select id="stockCategoryFilter" class="form-control" style="width: auto;" onchange="loadShopStock()">
+                <option value="">All Categories</option>
+                <option value="Dairy & Breakfast">Dairy & Breakfast</option>
+                <option value="Bakery">Bakery & Breads</option>
+                <option value="Eggs & Meat">Eggs & Meat</option>
+                <option value="Staples & Grains">Staples & Grains</option>
+                <option value="Snacks & Biscuits">Snacks & Biscuits</option>
+                <option value="Beverages">Beverages</option>
+                <option value="Fruits & Vegetables">Fruits & Vegetables</option>
+              </select>
+
+              <select id="stockStatusFilter" class="form-control" style="width: auto;" onchange="loadShopStock()">
+                <option value="">All Stock Levels</option>
+                <option value="in_stock">In Stock Only</option>
+                <option value="low_stock">Low Stock Alerts</option>
+                <option value="out_of_stock">Out of Stock</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inventory Table -->
         <div class="table-responsive">
-          <table class="table">
+          <table>
             <thead>
               <tr>
                 <th>Product</th>
-                <th>Price</th>
-                <th>Quantity</th>
-                <th>Subtotal</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="billingItemsTbody">
-              <!-- Rendered via JS -->
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Bill Totals & Payment Actions -->
-        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 2px solid var(--surface-border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-          <div>
-            <div style="font-size: 0.82rem; color: var(--text-muted); display: flex; gap: 0.4rem; align-items: baseline;">
-              <span>Subtotal:</span>
-              <span id="billSubtotal" style="font-weight: 600; color: var(--text);">₹0.00</span>
-            </div>
-            <div id="billGrandTotal" style="font-size: 2rem; font-weight: 800; color: var(--primary);">₹0.00</div>
-          </div>
-
-          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-pay-action" onclick="handlePayCash()" disabled>
-              💵 Pay Cash
-            </button>
-            <button class="btn btn-primary btn-pay-action" onclick="handleShowUpiQr()" disabled>
-              📱 Show UPI QR
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================================================= -->
-    <!-- TAB 2: STOCK & BATCHES -->
-    <!-- ================================================================= -->
-    <section class="tab-panel" id="tab-stock">
-      <div class="card">
-        <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
-          <div>
-            <h2>Inventory & Batch Tracking (FEFO)</h2>
-            <p style="font-size: 0.82rem; color: var(--text-muted);">Track quantities in batches with hand-entered expiry dates. Oldest batch sells first.</p>
-          </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-secondary btn-sm" onclick="openAddBatchModal()">+ Add Goods (Batch)</button>
-            <button class="btn btn-primary btn-sm" onclick="showModal('addProductModal')">+ New Product</button>
-          </div>
-        </div>
-
-        <div class="form-group" style="max-width: 400px; margin-bottom: 1rem;">
-          <input type="text" id="stockSearchInput" class="form-control" placeholder="Search by name, barcode, or category...">
-        </div>
-
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Product & Category</th>
                 <th>Barcode</th>
-                <th>Price</th>
+                <th>Price / MRP</th>
                 <th>Total Stock</th>
                 <th>Threshold</th>
-                <th>Nearest Expiry</th>
-                <th>Action</th>
+                <th>Batches & Expiry</th>
+                <th style="text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody id="stockTableBody">
-              <!-- Rendered via JS -->
+              <!-- Populated via JS -->
             </tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ================================================================= -->
-    <!-- TAB 3: ALERTS (Low Stock, Shrinkage, Expiry) -->
-    <!-- ================================================================= -->
-    <section class="tab-panel" id="tab-alerts">
-      <div class="grid grid-cols-2">
-        
-        <!-- Low Stock Alerts -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <span>📉</span> Low Stock Alerts (<span id="lowStockCountBadge">0</span>)
-            </div>
-          </div>
-          <div id="lowStockAlertsList">
-            <!-- Rendered via JS -->
-          </div>
-        </div>
-
-        <!-- Expiry Alerts (FEFO) -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <span>⏳</span> Near Expiry Alerts (<span id="expiryCountBadge">0</span>)
-            </div>
-          </div>
-          <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-            Items expiring in 30 days. FEFO algorithm prioritizes oldest batch at POS checkout.
-          </p>
-          <div id="expiryAlertsList">
-            <!-- Rendered via JS -->
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Physical Shrinkage Check Section -->
-      <div class="card" style="margin-top: 1rem;">
-        <div class="card-header">
-          <div class="card-title">
-            <span>🔍</span> Physical Shrinkage Audit
-          </div>
-        </div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-          Perform stock spot-checks. Enter counted units; AgoraZure compares recorded system stock against your physical count and flags discrepancies (leakage, damage, theft).
-        </p>
-
-        <form id="shrinkageCheckForm" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
-          <div class="form-group" style="flex: 2; min-width: 200px; margin-bottom: 0;">
-            <label class="form-label">Select Product</label>
-            <select id="shrinkageProductSelect" name="product_id" class="form-control" required></select>
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 140px; margin-bottom: 0;">
-            <label class="form-label">Physically Counted Qty</label>
-            <input type="number" name="counted_quantity" class="form-control" min="0" placeholder="e.g. 15" required>
-          </div>
-          <button type="submit" class="btn btn-primary" style="height: 42px;">Verify Match</button>
-        </form>
-
-        <div id="shrinkageResultBox" style="display: none; margin-top: 1.25rem;"></div>
-      </div>
-    </section>
-
-    <!-- ================================================================= -->
-    <!-- TAB 4: UNMET DEMAND & AI INSIGHTS -->
-    <!-- ================================================================= -->
-    <section class="tab-panel" id="tab-insights">
-      <div class="card">
-        <div class="card-header">
+      <!-- ===================================================================
+           TAB 4: COUNTER BILLING (POS SCAN & BILL)
+           =================================================================== -->
+      <section id="pane-billing" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem;">
           <div>
-            <h2>Unmet-Demand Loop & AI Stocking Advice</h2>
-            <p style="font-size: 0.85rem; color: var(--text-muted);">
-              When nearby shoppers search for unstocked goods, demand is logged and transformed into AI stocking advice.
+            <h1 style="font-size: 1.5rem;">Counter Scan & Billing (FEFO POS)</h1>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Barcode scanning counter with dual billing tabs and automated First-Expiry-First-Out stock deduction.
             </p>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="loadDemandInsights()">↻ Refresh AI</button>
         </div>
 
-        <div class="grid grid-cols-2" style="margin-bottom: 1.25rem;">
-          <div style="background: var(--surface-subtle); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-            <div id="missedSearchCountTotal" style="font-size: 1.8rem; font-weight: 800; color: var(--primary);">0</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">TOTAL MISSED SEARCHES LOGGED</div>
-          </div>
-          <div style="background: var(--surface-subtle); padding: 1rem; border-radius: var(--radius-sm); text-align: center;">
-            <div id="unmetDemandItemsCount" style="font-size: 1.8rem; font-weight: 800; color: var(--accent);">0</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">DISTINCT UNMET PRODUCTS</div>
-          </div>
-        </div>
-
-        <div id="demandInsightsList">
-          <!-- Rendered via JS -->
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================================================= -->
-    <!-- TAB 5: ONLINE ORDERS -->
-    <!-- ================================================================= -->
-    <section class="tab-panel" id="tab-orders">
-      <div class="card">
-        <div class="card-header" style="flex-wrap: wrap; gap: 0.5rem;">
-          <div>
-            <h2>Online Orders & Pre-Books</h2>
-            <p style="font-size: 0.82rem; color: var(--text-muted);">Accept orders, prepare items, and coordinate pickup or cluster shared delivery.</p>
-          </div>
-          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-sm" onclick="loadOrders('')">All</button>
-            <button class="btn btn-secondary btn-sm" onclick="loadOrders('pending')">Pending</button>
-            <button class="btn btn-secondary btn-sm" onclick="loadOrders('accepted')">Accepted</button>
-            <button class="btn btn-secondary btn-sm" onclick="loadOrders('ready')">Ready</button>
-            <button class="btn btn-secondary btn-sm" onclick="loadOrders('completed')">Completed</button>
-          </div>
-        </div>
-
-        <div id="ordersListContainer">
-          <!-- Rendered via JS -->
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================================================= -->
-    <!-- TAB 6: SHARED DELIVERY SERVICE -->
-    <!-- ================================================================= -->
-    <section class="tab-panel" id="tab-delivery">
-      <div id="clusterContentArea">
-        <div class="cluster-banner">
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-            <div>
-              <span class="badge badge-primary" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">1 KM RADIUS CLUSTER</span>
-              <h2 id="clusterNameDisplay" style="color: white; margin-top: 0.3rem;">Indiranagar Central Cluster</h2>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="recomputeClusters()">↻ Recalculate 1 km Radius</button>
-          </div>
-
-          <div class="cluster-metrics">
-            <div class="metric-item">
-              <div class="metric-value" id="sharedRiderName">Ramesh Kumar</div>
-              <div class="metric-label">Shared Delivery Rider</div>
-              <div id="sharedRiderPhone" style="font-size: 0.75rem; color: rgba(255, 255, 255, 0.75); margin-top: 0.2rem;">9876543210</div>
-            </div>
-            <div class="metric-item">
-              <div class="metric-value" id="totalRiderSalary">₹12,000</div>
-              <div class="metric-label">Total Rider Salary</div>
-            </div>
-            <div class="metric-item">
-              <div class="metric-value" id="shopsSharingCount">3</div>
-              <div class="metric-label">Shops in Cluster</div>
-            </div>
-            <div class="metric-item">
-              <div class="metric-value" id="thisShopSalaryShare" style="color: #4ade80;">₹4,000</div>
-              <div class="metric-label">THIS SHOP'S SHARE / MO</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>🏪</span> Shops Sharing This Delivery Person
-          </div>
-        </div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-          All shops located within 1 km share one delivery person. Salary is split equally and recalculates automatically when a new shop joins.
-        </p>
-
-        <div id="clusterShopsList">
-          <!-- Rendered via JS -->
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================================================= -->
-    <!-- TAB 7: LOYALTY & SEASONAL OFFERS -->
-    <!-- ================================================================= -->
-    <section class="tab-panel" id="tab-marketing">
-      <div class="grid grid-cols-2">
-        
-        <!-- Seasonal Offers -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <span>🏷️</span> Active Offers
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="openCreateOfferModal()">+ New Offer</button>
-          </div>
-          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-            Run festive discounts or clearance promotions across products.
-          </p>
-          <div id="offersListContainer">
-            <!-- Rendered via JS -->
-          </div>
-        </div>
-
-        <!-- Customer Loyalty Ledger -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <span>⭐</span> Customer Loyalty Points
-            </div>
-          </div>
-          <div style="display: flex; gap: 1rem; margin-bottom: 0.75rem;">
-            <div>Total Rewards: <strong id="loyaltyTotalIssued" style="color: var(--primary);">0</strong> pts</div>
-            <div>Enrolled Customers: <strong id="loyaltyCustomerCount">0</strong></div>
-          </div>
-          <div class="table-responsive">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Phone</th>
-                  <th>Points</th>
-                  <th>Last Active</th>
-                </tr>
-              </thead>
-              <tbody id="loyaltyCustomersTbody">
-                <!-- Rendered via JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-  </main>
-
-  <!-- ================================================================= -->
-  <!-- MODAL: AUTHENTICATION / QUICK DEMO LOGIN -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="authModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>🏪 Shopkeeper Access</h3>
-      </div>
-
-      <div style="margin-bottom: 1.25rem;">
-        <label class="form-label">🚀 1-Click Demo Login (Judge / Tester)</label>
-        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
-          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810011111', 'password123')">
-            Login as <strong>Gupta Supermart</strong> (Indiranagar - Cluster 1)
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810022222', 'password123')">
-            Login as <strong>Fresh Daily Grocery</strong> (Indiranagar - Cluster 1)
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810033333', 'password123')">
-            Login as <strong>Metro Provision Store</strong> (Indiranagar - Cluster 1)
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="quickLogin('9810044444', 'password123')">
-            Login as <strong>Green Field Organics</strong> (Whitefield - Far away)
-          </button>
-        </div>
-      </div>
-
-      <div style="text-align: center; margin: 1rem 0; color: var(--text-muted); font-size: 0.85rem;">
-        ── OR REGISTER NEW SHOP ──
-      </div>
-
-      <form id="registerShopForm">
-        <div class="form-group">
-          <label class="form-label">Shop Name</label>
-          <input type="text" name="shop_name" class="form-control" placeholder="e.g. Anand Provision Store" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Owner Name</label>
-          <input type="text" name="owner_name" class="form-control" placeholder="e.g. Anand Sharma" required>
-        </div>
         <div class="grid grid-cols-2">
+          <!-- Left: Scanner & Active Bill -->
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <!-- Dual Bill Tabs -->
+              <div style="display: flex; gap: 0.4rem;">
+                <button class="btn btn-primary btn-sm" id="posTab1Btn" onclick="switchBillingTab('tab_1')">Session 1</button>
+                <button class="btn btn-secondary btn-sm" id="posTab2Btn" onclick="switchBillingTab('tab_2')">Session 2</button>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="clearCurrentBill()">Clear Bill</button>
+            </div>
+
+            <form onsubmit="handleBarcodeScan(event)" style="margin-bottom: 1rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Scan Barcode or Enter Product Code</label>
+                <div style="display: flex; gap: 0.5rem;">
+                  <input type="text" id="posBarcodeInput" class="form-control" placeholder="Scan or enter barcode (e.g. 890103000001)" autofocus autocomplete="off">
+                  <button type="submit" class="btn btn-primary btn-sm">Scan</button>
+                </div>
+              </div>
+            </form>
+
+            <div class="table-responsive" style="max-height: 280px; margin-bottom: 1rem;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="posBillTableBody">
+                  <!-- Rendered via JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">BILL TOTAL:</div>
+                <div style="font-size: 1.8rem; font-weight: 800; color: var(--primary);" id="posTotalDisplay">₹0.00</div>
+              </div>
+              <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-secondary btn-sm" onclick="completePosCheckout('cash')">💵 Cash</button>
+                <button class="btn btn-primary btn-sm" onclick="completePosCheckout('upi')">📱 UPI</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Quick Item Selector -->
+          <div class="card">
+            <h3 style="margin-bottom: 0.75rem;">⚡ Quick Add Counter Items</h3>
+            <div id="posQuickItemsGrid" class="grid grid-cols-2" style="max-height: 480px; overflow-y: auto;">
+              <!-- Populated via JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 5: SEASONAL OFFERS
+           =================================================================== -->
+      <section id="pane-offers" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h1 style="font-size: 1.5rem;">Seasonal & Festive Offers</h1>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Publish store-wide discounts or item-specific deals that show instantly on the shopper portal.
+            </p>
+          </div>
+
+          <button class="btn btn-primary btn-sm" onclick="openCreateOfferModal()">
+            + Create New Offer
+          </button>
+        </div>
+
+        <div id="offersListContainer">
+          <!-- Populated via JS -->
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 6: SHARED DELIVERY (1 KM CLUSTER)
+           =================================================================== -->
+      <section id="pane-delivery" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem;">
+          <div>
+            <h1 style="font-size: 1.5rem;">Shared 1 km Cluster Delivery</h1>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Local shops within 1 km share 1 dedicated delivery partner to split monthly salary.
+            </p>
+          </div>
+        </div>
+
+        <div id="clusterContentArea">
+          <!-- Populated via JS -->
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- =========================================================================
+       SHOPKEEPER LOGIN & REGISTRATION MODAL
+       ========================================================================= -->
+  <div class="modal-overlay active" id="shopAuthModal">
+    <div class="modal-content" style="max-width: 580px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <img src="/images/logo.png" alt="AgoraZure Logo" style="height: 32px;">
+          <h3 style="font-size: 1.25rem;">Merchant Portal</h3>
+        </div>
+      </div>
+
+      <!-- Auth Tabs: Login vs Register -->
+      <div style="display: flex; border-bottom: 2px solid var(--border); margin-bottom: 1.25rem;">
+        <button type="button" class="btn btn-secondary" id="tabShopLogin" onclick="switchShopAuthTab('login')" style="flex: 1; border: none; border-bottom: 2px solid var(--primary); border-radius: 0; font-weight: 700; color: var(--primary);">
+          Store Sign In
+        </button>
+        <button type="button" class="btn btn-secondary" id="tabShopRegister" onclick="switchShopAuthTab('register')" style="flex: 1; border: none; border-bottom: 2px solid transparent; border-radius: 0; font-weight: 600; color: var(--text-muted);">
+          Register New Shop
+        </button>
+      </div>
+
+      <!-- 1. SIGN IN FORM -->
+      <div id="shopLoginFormContainer">
+        <form onsubmit="handleShopkeeperLogin(event)">
           <div class="form-group">
-            <label class="form-label">Phone</label>
-            <input type="tel" name="phone" class="form-control" placeholder="10-digit mobile" required>
+            <label class="form-label">Owner Mobile Number or Email</label>
+            <input type="text" name="identifier" class="form-control" placeholder="10-digit mobile or email" required>
           </div>
           <div class="form-group">
             <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" required>
+            <input type="password" name="password" class="form-control" placeholder="Store password" required>
           </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 0.5rem;">
+            Sign In to Store Dashboard
+          </button>
+        </form>
+
+        <div style="text-align: center; margin: 1.25rem 0 0.85rem 0; font-size: 0.78rem; color: var(--text-muted);">
+          ── OR QUICK 1-CLICK TEST LOGIN ──
         </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="quickShopkeeperLogin('9810011111', 'password123')">
+            🏪 <strong>Gupta Supermart</strong> (Indiranagar - Shop ID 1)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="quickShopkeeperLogin('9810022222', 'password123')">
+            🏪 <strong>Fresh Daily Grocery</strong> (Indiranagar - Shop ID 2)
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. REGISTER NEW SHOP FORM -->
+      <div id="shopRegisterFormContainer" style="display: none;">
+        <form onsubmit="handleRegisterShop(event)">
+          <div class="grid grid-cols-2">
+            <div class="form-group">
+              <label class="form-label">Shop Name</label>
+              <input type="text" name="shop_name" class="form-control" placeholder="e.g. City Provision Store" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Owner Full Name</label>
+              <input type="text" name="owner_name" class="form-control" placeholder="e.g. Anand Kumar" required>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2">
+            <div class="form-group">
+              <label class="form-label">Mobile Number</label>
+              <input type="tel" name="phone" class="form-control" placeholder="10-digit phone" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Address</label>
+              <input type="email" name="email" class="form-control" placeholder="store@example.com">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Store Physical Address</label>
+            <input type="text" name="address" class="form-control" placeholder="Street, Locality, City" required>
+          </div>
+
+          <div class="grid grid-cols-2">
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <select name="category" class="form-control">
+                <option value="Grocery & Supermarket">Grocery & Supermarket</option>
+                <option value="Fruits & Vegetables">Fruits & Vegetables</option>
+                <option value="Dairy & Bakery">Dairy & Bakery</option>
+                <option value="Organic & Wellness">Organic & Wellness</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Opening Hours</label>
+              <input type="text" name="opening_hours" class="form-control" value="7:00 AM - 10:00 PM">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2">
+            <div class="form-group">
+              <label class="form-label">Store Password</label>
+              <input type="password" name="password" class="form-control" placeholder="Min 4 characters" minlength="4" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Store Logo / Photo URL</label>
+              <input type="url" name="photo_url" class="form-control" placeholder="https://...">
+            </div>
+          </div>
+
+          <input type="hidden" name="latitude" value="12.9716">
+          <input type="hidden" name="longitude" value="77.6412">
+
+          <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 0.5rem;">
+            Register Store & Open Dashboard
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: REJECT ORDER (WITH REASON)
+       ========================================================================= -->
+  <div class="modal-overlay" id="rejectOrderModal">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="color: var(--danger);">✕ Reject Order</h3>
+        <button class="modal-close" onclick="hideModal('rejectOrderModal')">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Please state the reason for rejecting this order. The customer will see this message in their live tracking timeline.
+      </p>
+
+      <form onsubmit="handleConfirmOrderRejection(event)">
+        <input type="hidden" id="rejectTargetOrderId">
         <div class="form-group">
-          <label class="form-label">Address</label>
-          <input type="text" name="address" class="form-control" placeholder="Street, Area, City" required>
+          <label class="form-label">Rejection Reason</label>
+          <select id="rejectReasonPreset" class="form-control" style="margin-bottom: 0.5rem;" onchange="handleRejectPresetChange(this.value)">
+            <option value="Items currently out of stock at counter">Items currently out of stock at counter</option>
+            <option value="Store is closing for the day">Store is closing for the day</option>
+            <option value="Delivery address is outside delivery cluster">Delivery address is outside delivery cluster</option>
+            <option value="Other">Other (enter custom reason below)</option>
+          </select>
+          <textarea id="rejectReasonCustom" class="form-control" rows="3" placeholder="Enter reason for customer..."></textarea>
         </div>
-        <div class="grid grid-cols-2">
-          <div class="form-group">
-            <label class="form-label">Latitude</label>
-            <input type="number" step="any" name="latitude" class="form-control" value="12.9725" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Longitude</label>
-            <input type="number" step="any" name="longitude" class="form-control" value="77.6425" required>
-          </div>
+
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="hideModal('rejectOrderModal')">Cancel</button>
+          <button type="submit" class="btn btn-danger btn-sm">Confirm Reject</button>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Register Shop Account</button>
       </form>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: ADD PRODUCT -->
-  <!-- ================================================================= -->
+  <!-- =========================================================================
+       MODAL: ADD NEW PRODUCT
+       ========================================================================= -->
   <div class="modal-overlay" id="addProductModal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 620px;">
       <div class="modal-header">
-        <h3>📦 Register New Product</h3>
+        <h3 id="addProductModalTitle">📦 Add Product to Store Inventory</h3>
         <button class="modal-close" onclick="hideModal('addProductModal')">&times;</button>
       </div>
 
-      <form id="addProductForm">
-        <div class="form-group">
-          <label class="form-label">Product Name</label>
-          <input type="text" name="name" class="form-control" placeholder="e.g. Amul Taaza Milk 500ml" required>
-        </div>
+      <form id="productForm" onsubmit="handleSaveProduct(event)">
+        <input type="hidden" id="productEditId">
+
         <div class="grid grid-cols-2">
           <div class="form-group">
-            <label class="form-label">Barcode (Scan or Type)</label>
-            <input type="text" name="barcode" class="form-control" placeholder="e.g. 890103000001" required>
+            <label class="form-label">Product Name</label>
+            <input type="text" name="name" id="prodNameInput" class="form-control" placeholder="e.g. Amul Taaza Milk 500ml" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Selling Price (₹)</label>
-            <input type="number" step="0.5" name="price" class="form-control" placeholder="28.0" required>
+            <label class="form-label">Barcode / SKU</label>
+            <input type="text" name="barcode" id="prodBarcodeInput" class="form-control" placeholder="Leave empty to auto-generate">
           </div>
         </div>
+
         <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Brand</label>
+            <input type="text" name="brand" id="prodBrandInput" class="form-control" placeholder="e.g. Amul, Britannia" value="General">
+          </div>
           <div class="form-group">
             <label class="form-label">Category</label>
-            <input type="text" name="category" class="form-control" placeholder="e.g. Dairy & Breakfast" value="General">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Low Stock Threshold</label>
-            <input type="number" name="low_stock_threshold" class="form-control" value="5">
-          </div>
-        </div>
-        <div class="grid grid-cols-2">
-          <div class="form-group">
-            <label class="form-label">Initial Quantity</label>
-            <input type="number" name="initial_quantity" class="form-control" value="10">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Batch Expiry (Hand-entered)</label>
-            <input type="date" name="expiry_date" class="form-control" value="2026-12-31">
+            <select name="category" id="prodCategoryInput" class="form-control">
+              <option value="Dairy & Breakfast">Dairy & Breakfast</option>
+              <option value="Bakery">Bakery & Breads</option>
+              <option value="Eggs & Meat">Eggs & Meat</option>
+              <option value="Staples & Grains">Staples & Grains</option>
+              <option value="Snacks & Biscuits">Snacks & Biscuits</option>
+              <option value="Beverages">Beverages</option>
+              <option value="Fruits & Vegetables">Fruits & Vegetables</option>
+              <option value="Household">Household</option>
+            </select>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Save Product</button>
+
+        <div class="grid grid-cols-3">
+          <div class="form-group">
+            <label class="form-label">Selling Price (₹)</label>
+            <input type="number" step="0.5" name="price" id="prodPriceInput" class="form-control" placeholder="28.00" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">MRP (₹)</label>
+            <input type="number" step="0.5" name="mrp" id="prodMrpInput" class="form-control" placeholder="30.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Pack Unit</label>
+            <input type="text" name="unit" id="prodUnitInput" class="form-control" placeholder="500 ml, 1 kg" value="1 pc">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3" id="initialBatchGroup">
+          <div class="form-group">
+            <label class="form-label">Initial Stock Qty</label>
+            <input type="number" name="initial_quantity" id="prodInitialQtyInput" class="form-control" value="20" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Low Stock Alert</label>
+            <input type="number" name="low_stock_threshold" id="prodThresholdInput" class="form-control" value="5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiry Date</label>
+            <input type="date" name="expiry_date" id="prodExpiryInput" class="form-control" value="2027-12-31">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Product Image URL</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="url" name="image_url" id="prodImageInput" class="form-control" placeholder="https://..." oninput="updateImagePreview(this.value)">
+            <img id="prodImagePreview" src="" alt="" style="width: 38px; height: 38px; border-radius: var(--radius-sm); object-fit: cover; display: none; background: #eee;">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <input type="text" name="description" id="prodDescInput" class="form-control" placeholder="Short description of product">
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
+          <input type="checkbox" name="is_available" id="prodAvailableInput" checked style="width: 18px; height: 18px;">
+          <label for="prodAvailableInput" style="font-size: 0.88rem; font-weight: 600; cursor: pointer;">
+            In-Stock and Available for Online Orders
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnSaveProduct">
+          Save Product to Inventory
+        </button>
       </form>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: ADD BATCH (GOODS ARRIVAL) -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="addBatchModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <h3>📥 Add Goods / New Batch</h3>
-          <span id="batchModalProductName" style="font-size: 0.8rem; color: var(--text-muted);"></span>
-        </div>
-        <button class="modal-close" onclick="hideModal('addBatchModal')">&times;</button>
-      </div>
-
-      <form id="addBatchForm">
-        <div class="form-group">
-          <label class="form-label">Product Barcode (Scan or Type)</label>
-          <input type="text" name="barcode" class="form-control" placeholder="Scan product barcode..." required>
-        </div>
-        <div class="grid grid-cols-2">
-          <div class="form-group">
-            <label class="form-label">Quantity Arrived</label>
-            <input type="number" name="quantity" class="form-control" min="1" placeholder="e.g. 25" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Batch Expiry Date</label>
-            <input type="date" name="expiry_date" class="form-control" required>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Batch Number (Optional)</label>
-          <input type="text" name="batch_number" class="form-control" placeholder="e.g. B-OCT26-01">
-        </div>
-        <button type="submit" class="btn btn-primary btn-block">Add Batch Stock</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ================================================================= -->
-  <!-- MODAL: UPI QR PAYMENT -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="upiQrModal">
-    <div class="modal-content" style="max-width: 400px; text-align: center;">
-      <div class="modal-header">
-        <h3 style="margin: 0 auto;">📱 UPI QR Payment</h3>
-        <button class="modal-close" onclick="hideModal('upiQrModal')">&times;</button>
-      </div>
-
-      <div class="qr-container">
-        <div class="upi-amount-pill" id="upiQrAmount">₹0.00</div>
-        <img id="upiQrImage" class="qr-image" src="" alt="UPI QR Code">
-        <div style="font-size: 0.85rem; color: var(--text-muted);">
-          Pay to: <strong id="upiQrMerchant">Store</strong> (<span id="upiQrId"></span>)
-        </div>
-        <p style="font-size: 0.78rem; color: #64748b; margin-top: 0.5rem;">
-          Scan with GPay, PhonePe, Paytm or any UPI App
-        </p>
-      </div>
-
-      <button class="btn btn-accent btn-block" onclick="handleConfirmUpiReceived()" style="font-size: 1rem; padding: 0.8rem;">
-        ✓ Payment Received
-      </button>
-    </div>
-  </div>
-
-  <!-- ================================================================= -->
-  <!-- MODAL: DIGITAL RECEIPT -->
-  <!-- ================================================================= -->
-  <div class="modal-overlay" id="receiptModal">
+  <!-- =========================================================================
+       MODAL: QUICK STOCK UPDATE / ADD BATCH
+       ========================================================================= -->
+  <div class="modal-overlay" id="quickStockModal">
     <div class="modal-content" style="max-width: 440px;">
       <div class="modal-header">
-        <h3>🧾 Digital Receipt</h3>
-        <button class="modal-close" onclick="hideModal('receiptModal')">&times;</button>
+        <h3 id="quickStockTitle">📦 Adjust Stock Level</h3>
+        <button class="modal-close" onclick="hideModal('quickStockModal')">&times;</button>
       </div>
 
-      <div class="receipt-paper" id="receiptPrintArea">
-        <div class="receipt-header">
-          <div class="receipt-logo" id="receiptShopName">AGORAZURE STORE</div>
-          <div id="receiptShopAddress">Indiranagar, Bengaluru</div>
-          <div id="receiptShopPhone">Ph: 9810011111</div>
+      <form onsubmit="handleQuickStockUpdate(event)">
+        <input type="hidden" id="stockTargetProdId">
+        <div class="form-group">
+          <label class="form-label" id="stockProdNameLabel">Product Name</label>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+            Current Total Stock: <strong id="currentStockCountDisplay">0</strong> units
+          </div>
+          <label class="form-label">New Total Stock Quantity</label>
+          <input type="number" id="quickStockQtyInput" class="form-control" min="0" required>
         </div>
 
-        <div class="receipt-row">
-          <span>Bill No:</span>
-          <span id="receiptNumber">BILL-20261008-001</span>
-        </div>
-        <div class="receipt-row">
-          <span>Date/Time:</span>
-          <span id="receiptDate">2026-10-08 14:00</span>
-        </div>
-        <div class="receipt-row">
-          <span>Payment:</span>
-          <span id="receiptPayMethod" style="font-weight: bold;">CASH</span>
+        <div class="form-group">
+          <label class="form-label">Batch Expiry Date</label>
+          <input type="date" id="quickStockExpiryInput" class="form-control" value="2027-12-31">
         </div>
 
-        <div class="receipt-divider"></div>
-
-        <div id="receiptItemsTbody">
-          <!-- Populated via JS -->
-        </div>
-
-        <div class="receipt-divider"></div>
-
-        <div class="receipt-total">
-          <span>GRAND TOTAL:</span>
-          <span id="receiptTotal">₹0.00</span>
-        </div>
-
-        <div style="text-align: center; margin-top: 1rem; font-size: 0.75rem; color: #64748b;">
-          * FEFO Stock Deducted Automatically *<br>
-          Thank you for shopping local!
-        </div>
-      </div>
-
-      <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-        <button class="btn btn-secondary btn-block" onclick="printReceipt()">🖨️ Print Receipt</button>
-        <button class="btn btn-primary btn-block" onclick="hideModal('receiptModal')">Done</button>
-      </div>
+        <button type="submit" class="btn btn-primary btn-block">Update Stock Quantity</button>
+      </form>
     </div>
   </div>
 
-  <!-- ================================================================= -->
-  <!-- MODAL: CREATE SEASONAL OFFER -->
-  <!-- ================================================================= -->
+  <!-- =========================================================================
+       MODAL: CREATE / EDIT SEASONAL OFFER
+       ========================================================================= -->
   <div class="modal-overlay" id="createOfferModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -663,34 +726,105 @@
         <button class="modal-close" onclick="hideModal('createOfferModal')">&times;</button>
       </div>
 
-      <form id="createOfferForm">
-        <input type="hidden" name="offer_id" id="offerEditId" value="">
+      <form id="createOfferForm" onsubmit="handleCreateOffer(event)">
+        <input type="hidden" id="offerEditId">
+
         <div class="form-group">
-          <label class="form-label">Offer Title</label>
-          <input type="text" name="title" id="offerTitleInput" class="form-control" placeholder="e.g. Diwali Weekend Snacks Special" required>
+          <label class="form-label">Offer Title / Festive Banner</label>
+          <input type="text" name="title" id="offerTitleInput" class="form-control" placeholder="e.g. Diwali Dairy Special - 15% OFF" required>
         </div>
+
         <div class="form-group">
-          <label class="form-label">Applicable Products</label>
+          <label class="form-label">Apply Offer To</label>
           <select name="product_id" id="offerProductSelect" class="form-control">
-            <option value="">All Products (Store-wide Offer)</option>
-            <!-- Dynamically populated from shop stock -->
+            <option value="">All Products (Store-wide discount)</option>
+            <!-- Populated via JS -->
           </select>
         </div>
+
         <div class="form-group">
           <label class="form-label">Discount Percentage (%)</label>
           <input type="number" step="1" name="discount_percent" id="offerDiscountInput" class="form-control" value="15" min="1" max="90" required>
         </div>
+
         <div class="grid grid-cols-2">
           <div class="form-group">
             <label class="form-label">Start Date</label>
-            <input type="date" name="valid_from" id="offerValidFromInput" class="form-control" value="2026-10-01" required>
+            <input type="date" name="valid_from" id="offerValidFromInput" class="form-control" required>
           </div>
           <div class="form-group">
             <label class="form-label">End Date</label>
-            <input type="date" name="valid_to" id="offerValidToInput" class="form-control" value="2026-10-31" required>
+            <input type="date" name="valid_to" id="offerValidToInput" class="form-control" required>
           </div>
         </div>
+
         <button type="submit" id="offerSubmitBtn" class="btn btn-primary btn-block">Publish Offer</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: EDIT SHOP PROFILE & OPEN/CLOSED
+       ========================================================================= -->
+  <div class="modal-overlay" id="shopProfileModal">
+    <div class="modal-content" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3>🏪 Store Profile & Business Details</h3>
+        <button class="modal-close" onclick="hideModal('shopProfileModal')">&times;</button>
+      </div>
+
+      <form onsubmit="handleSaveShopProfile(event)">
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Store Name</label>
+            <input type="text" id="shopProfName" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Owner Name</label>
+            <input type="text" id="shopProfOwner" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Mobile Number</label>
+            <input type="tel" id="shopProfPhone" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input type="email" id="shopProfEmail" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Store Physical Address</label>
+          <input type="text" id="shopProfAddress" class="form-control" required>
+        </div>
+
+        <div class="grid grid-cols-2">
+          <div class="form-group">
+            <label class="form-label">Business Category</label>
+            <input type="text" id="shopProfCategory" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Opening Hours</label>
+            <input type="text" id="shopProfHours" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Shop Photo / Logo URL</label>
+          <input type="url" id="shopProfPhoto" class="form-control">
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem; background: var(--bg-subtle); border-radius: var(--radius-md);">
+          <input type="checkbox" id="shopProfIsOpen" style="width: 20px; height: 20px;">
+          <label for="shopProfIsOpen" style="font-weight: 700; cursor: pointer;">
+            Store is currently OPEN for online orders
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">Save Store Changes</button>
       </form>
     </div>
   </div>
@@ -698,6 +832,6 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/static/js/shopkeeper.js"></script>
+  <script src="/js/shopkeeper.js"></script>
 </body>
 </html>
